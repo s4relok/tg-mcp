@@ -331,7 +331,7 @@ Acceptance:
   - `/digest_week`
   - `/search <query>`
   - `/actions`
-- Add log rotation.
+- Add log rotation for `/srv/tg-mcp/shared/logs/*.log`.
 
 ## Not in the quick version
 

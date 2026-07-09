@@ -174,6 +174,12 @@ Install Apache `/mcp` proxy:
 sudo ops/install-apache-proxy.sh
 ```
 
+Install log rotation for `/srv/tg-mcp/shared/logs/*.log`:
+
+```bash
+sudo ops/install-logrotate.sh
+```
+
 That installer exposes:
 
 ```text
