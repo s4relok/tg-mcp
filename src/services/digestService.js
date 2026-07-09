@@ -219,6 +219,57 @@ export class TelegramDigestService {
     return digest;
   }
 
+  async getSourceSummary({ sourceId, date, from, to, timezone = DEFAULT_TIMEZONE, includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
+    if (!sourceId) {
+      throw new Error('sourceId is required');
+    }
+
+    const { sources } = await this.listSources({ includeDisabled: true, sourceIds: [sourceId] });
+    const source = sources[0] || null;
+    if (!source) {
+      return {
+        found: false,
+        sourceId,
+        summary: 'Telegram source was not found. Run refresh-sources first.',
+        messageCount: 0,
+        source: null
+      };
+    }
+
+    if (!source.enabled) {
+      return {
+        found: false,
+        sourceId,
+        summary: 'Telegram source is disabled. Enable it before requesting summaries.',
+        messageCount: 0,
+        source
+      };
+    }
+
+    const digest = from || to
+      ? await this.getPeriodSummary({
+        from,
+        to,
+        timezone,
+        sourceIds: [sourceId],
+        includeTimeline,
+        timelineLimit
+      })
+      : await this.getDailyDigest({
+        date,
+        timezone,
+        sourceIds: [sourceId],
+        includeTimeline,
+        timelineLimit
+      });
+
+    return {
+      found: true,
+      source,
+      ...digest
+    };
+  }
+
   async searchMessages({ query, from, to, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], limit = 20 } = {}) {
     if (!query || !query.trim()) {
       throw new Error('query is required');

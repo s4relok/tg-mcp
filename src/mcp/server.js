@@ -91,6 +91,26 @@ export function createTelegramMcpServer({ digestService, config }) {
   );
 
   server.registerTool(
+    'get_source_summary',
+    {
+      title: 'Get Telegram source summary',
+      description: 'Summarize one selected Telegram chat/channel for a date or date range.',
+      inputSchema: {
+        sourceId: z.string().describe('Telegram source id to summarize.'),
+        date: z.string().optional().describe('Date in YYYY-MM-DD format. Used when from/to are not provided. Defaults to today.'),
+        from: z.string().optional().describe('Start date in YYYY-MM-DD format, inclusive.'),
+        to: z.string().optional().describe('End date in YYYY-MM-DD format, exclusive.'),
+        timezone: z.string().optional().describe('IANA timezone. Defaults to Europe/Chisinau.'),
+        ...digestExcerptSchema
+      },
+      annotations: {
+        readOnlyHint: true
+      }
+    },
+    async (args) => toolResult(await digestService.getSourceSummary(args))
+  );
+
+  server.registerTool(
     'search_telegram_messages',
     {
       title: 'Search Telegram messages',

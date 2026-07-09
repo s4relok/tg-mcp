@@ -113,6 +113,11 @@ test('REST fallback endpoints expose digest service data', async () => {
     assert.equal(digest.timeline.length, 1);
     assert.equal(digest.timelineTruncated, true);
 
+    const sourceSummary = await (await fetch(`${baseUrl}/sources/chat-1/summary?date=2026-07-09&timezone=UTC`)).json();
+    assert.equal(sourceSummary.found, true);
+    assert.equal(sourceSummary.source.sourceId, 'chat-1');
+    assert.equal(sourceSummary.messageCount, 2);
+
     const search = await (await fetch(`${baseUrl}/search?query=deployment`)).json();
     assert.equal(search.count, 1);
 
@@ -204,6 +209,7 @@ test('MCP endpoint exposes Telegram tools', async () => {
     const names = tools.tools.map((tool) => tool.name);
 
     assert.ok(names.includes('get_daily_digest'));
+    assert.ok(names.includes('get_source_summary'));
     assert.ok(names.includes('search_telegram_messages'));
 
     const result = await client.callTool({ name: 'list_sources', arguments: {} });

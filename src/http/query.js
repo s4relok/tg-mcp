@@ -64,6 +64,18 @@ export function parsePeriodSummaryQuery(query) {
   };
 }
 
+export function parseSourceSummaryQuery(query, params = {}) {
+  return {
+    sourceId: params.sourceId ? String(params.sourceId) : query.sourceId ? String(query.sourceId) : '',
+    date: query.date ? String(query.date) : undefined,
+    from: query.from ? String(query.from) : undefined,
+    to: query.to ? String(query.to) : undefined,
+    timezone: query.timezone ? String(query.timezone) : undefined,
+    includeTimeline: toBoolean(query.includeTimeline, true),
+    timelineLimit: toInteger(query.timelineLimit, undefined)
+  };
+}
+
 export function parseSearchQuery(query) {
   return {
     query: query.query ? String(query.query) : '',

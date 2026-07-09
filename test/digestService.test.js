@@ -88,6 +88,34 @@ test('getDailyDigest can omit timeline excerpts', async () => {
   assert.equal(result.timelineTruncated, false);
 });
 
+test('getSourceSummary summarizes a selected source', async () => {
+  const service = createFixtureService();
+  const result = await service.getSourceSummary({
+    sourceId: 'chat-1',
+    date: '2026-07-09',
+    timezone: 'UTC',
+    timelineLimit: 1
+  });
+
+  assert.equal(result.found, true);
+  assert.equal(result.source.sourceId, 'chat-1');
+  assert.equal(result.messageCount, 2);
+  assert.equal(result.timeline.length, 1);
+});
+
+test('getSourceSummary reports disabled sources without summarizing them', async () => {
+  const service = createFixtureService();
+  const result = await service.getSourceSummary({
+    sourceId: 'chat-2',
+    date: '2026-07-09',
+    timezone: 'UTC'
+  });
+
+  assert.equal(result.found, false);
+  assert.equal(result.source.sourceId, 'chat-2');
+  assert.equal(result.messageCount, 0);
+});
+
 test('searchMessages searches only enabled sources', async () => {
   const service = createFixtureService();
   const result = await service.searchMessages({ query: 'disabled', limit: 10 });

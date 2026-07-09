@@ -4,6 +4,7 @@ import {
   parseMessageContextQuery,
   parsePeriodSummaryQuery,
   parseSearchQuery,
+  parseSourceSummaryQuery,
   parseSourcesQuery
 } from './query.js';
 
@@ -30,6 +31,10 @@ export function registerApiRoutes(app, { config, digestService, auth }) {
 
   app.get(`${basePath}/summary/period`, auth, asyncHandler(async (req, res) => {
     res.json(await digestService.getPeriodSummary(parsePeriodSummaryQuery(req.query)));
+  }));
+
+  app.get(`${basePath}/sources/:sourceId/summary`, auth, asyncHandler(async (req, res) => {
+    res.json(await digestService.getSourceSummary(parseSourceSummaryQuery(req.query, req.params)));
   }));
 
   app.get(`${basePath}/search`, auth, asyncHandler(async (req, res) => {

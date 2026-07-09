@@ -97,6 +97,30 @@ export function createOpenApiDocument(config) {
           }
         }
       },
+      [`${api}/sources/{sourceId}/summary`]: {
+        get: {
+          operationId: 'getSourceSummary',
+          summary: 'Get Telegram summary for one source',
+          parameters: [
+            {
+              name: 'sourceId',
+              in: 'path',
+              required: true,
+              description: 'Telegram source id.',
+              schema: { type: 'string' }
+            },
+            parameter('date', 'Date in YYYY-MM-DD format. Used when from/to are not provided. Defaults to today.'),
+            parameter('from', 'Start date in YYYY-MM-DD format, inclusive.'),
+            parameter('to', 'End date in YYYY-MM-DD format, exclusive.'),
+            parameter('timezone', 'IANA timezone. Defaults to Europe/Chisinau.'),
+            parameter('includeTimeline', 'Include compact chronological message excerpts.', { type: 'boolean' }),
+            parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 })
+          ],
+          responses: {
+            200: jsonResponse('Source summary.')
+          }
+        }
+      },
       [`${api}/search`]: {
         get: {
           operationId: 'searchTelegramMessages',
