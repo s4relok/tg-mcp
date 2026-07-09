@@ -13,13 +13,38 @@ export class MemoryTelegramStore {
 
   async close() {}
 
-  async upsertSource(source) {
+  async upsertSource(source, { preserveEnabled = false, preserveTags = true } = {}) {
     const index = this.sources.findIndex((item) => item.sourceId === source.sourceId);
     if (index >= 0) {
-      this.sources[index] = { ...this.sources[index], ...source };
+      const next = { ...this.sources[index], ...source };
+      if (preserveEnabled) {
+        next.enabled = this.sources[index].enabled;
+      }
+      if (preserveTags) {
+        next.tags = this.sources[index].tags;
+      }
+      this.sources[index] = next;
       return;
     }
     this.sources.push({ enabled: true, tags: [], ...source });
+  }
+
+  async setSourceEnabled(sourceId, enabled) {
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (!source) {
+      return null;
+    }
+    source.enabled = enabled;
+    return source;
+  }
+
+  async setSourceTags(sourceId, tags) {
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (!source) {
+      return null;
+    }
+    source.tags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
+    return source;
   }
 
   async upsertMessages(messages) {

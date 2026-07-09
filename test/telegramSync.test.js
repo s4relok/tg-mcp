@@ -6,6 +6,7 @@ import {
   listTelegramSources,
   normalizeTelegramMessage,
   normalizeTelegramSource,
+  refreshTelegramSources,
   syncTelegramMessages
 } from '../src/telegram/telegramSync.js';
 
@@ -137,4 +138,71 @@ test('syncTelegramMessages stores only whitelisted sources and honors minDate', 
   const messages = await store.findMessages({ sourceIds: ['1001'] });
   assert.equal(messages.length, 1);
   assert.equal(messages[0].text, 'New message');
+});
+
+test('refreshTelegramSources preserves existing DB selection and tags', async () => {
+  const client = new FakeTelegramClient({ dialogs, messagesBySource: {} });
+  const store = new MemoryTelegramStore({
+    sources: [
+      {
+        sourceId: '1001',
+        title: 'Old title',
+        enabled: true,
+        tags: ['team']
+      }
+    ]
+  });
+
+  const result = await refreshTelegramSources({
+    client,
+    store,
+    config: {
+      allowedSourceIds: []
+    }
+  });
+
+  assert.equal(result.sourceCount, 2);
+
+  const [source] = await store.listSources({ includeDisabled: true, sourceIds: ['1001'] });
+  assert.equal(source.title, 'Allowed Channel');
+  assert.equal(source.enabled, true);
+  assert.deepEqual(source.tags, ['team']);
+});
+
+test('syncTelegramMessages uses DB-enabled sources when env whitelist is empty', async () => {
+  const client = new FakeTelegramClient({
+    dialogs,
+    messagesBySource: {
+      1001: [
+        { id: 7, date: 1783620000, message: 'Selected from DB' }
+      ],
+      2002: [
+        { id: 8, date: 1783620000, message: 'Not selected' }
+      ]
+    }
+  });
+  const store = new MemoryTelegramStore({
+    sources: [
+      { sourceId: '1001', title: 'Allowed Channel', enabled: true, tags: [] },
+      { sourceId: '2002', title: 'Other Chat', enabled: false, tags: [] }
+    ]
+  });
+
+  const result = await syncTelegramMessages({
+    client,
+    store,
+    config: {
+      allowedSourceIds: [],
+      telegramSyncLimit: 10
+    }
+  });
+
+  assert.equal(result.sourceCount, 1);
+  assert.equal(result.messageCount, 1);
+  assert.deepEqual(client.iterCalls, [
+    {
+      sourceId: '1001',
+      options: { limit: 10 }
+    }
+  ]);
 });

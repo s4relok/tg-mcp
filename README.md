@@ -48,21 +48,27 @@ List available sources:
 npm run cli -- list-sources
 ```
 
-Then put selected source ids into `ALLOWED_SOURCE_IDS` and sync:
+Save the source list into MongoDB, then enable selected chats/channels:
 
 ```bash
+npm run cli -- refresh-sources
+npm run cli -- db-sources --include-disabled
+npm run cli -- enable-source <id> --tag work
 npm run cli -- sync
 ```
 
 Useful variants:
 
 ```bash
-npm run cli -- db-sources --include-disabled
+npm run cli -- disable-source <id>
+npm run cli -- set-source-tags <id> --tag work --tag project-x
 npm run cli -- sync --source-id <id> --limit 100
 npm run cli -- backfill --days 7 --limit 1000
 ```
 
-The first run is interactive and writes the Telegram session file.
+Alternatively, put selected source ids into `ALLOWED_SOURCE_IDS`; env selection overrides DB-enabled sources during sync.
+
+The first Telegram command is interactive and writes the Telegram session file.
 
 ## VPS quick deploy
 

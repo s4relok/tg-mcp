@@ -3,12 +3,16 @@ import { stdin as input, stdout as output } from 'node:process';
 
 import { loadConfig } from './config.js';
 import { createMongoStore } from './storage/mongoStore.js';
-import { createTelegramClient, listTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
+import { createTelegramClient, listTelegramSources, refreshTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
 
 function usage() {
   console.log(`Usage:
   npm run cli -- list-sources
+  npm run cli -- refresh-sources
   npm run cli -- db-sources
+  npm run cli -- enable-source SOURCE_ID [--tag TAG]
+  npm run cli -- disable-source SOURCE_ID
+  npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG]
   npm run cli -- sync [--limit N] [--source-id ID]
   npm run cli -- backfill --days N
 `);
@@ -17,24 +21,43 @@ function usage() {
 function parseArgs(argv) {
   const command = argv[2];
   const options = {
-    sourceIds: []
+    sourceIds: [],
+    tags: [],
+    positional: []
   };
 
   for (let index = 3; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--limit') {
+      if (!argv[index + 1]) {
+        throw new Error('--limit requires a value');
+      }
       options.limit = Number.parseInt(argv[index + 1], 10);
       index += 1;
     } else if (arg === '--days') {
+      if (!argv[index + 1]) {
+        throw new Error('--days requires a value');
+      }
       options.days = Number.parseInt(argv[index + 1], 10);
       index += 1;
     } else if (arg === '--source-id') {
+      if (!argv[index + 1]) {
+        throw new Error('--source-id requires a value');
+      }
       options.sourceIds.push(argv[index + 1]);
+      index += 1;
+    } else if (arg === '--tag') {
+      if (!argv[index + 1]) {
+        throw new Error('--tag requires a value');
+      }
+      options.tags.push(argv[index + 1]);
       index += 1;
     } else if (arg === '--include-disabled') {
       options.includeDisabled = true;
-    } else {
+    } else if (arg.startsWith('--')) {
       throw new Error(`Unknown argument: ${arg}`);
+    } else {
+      options.positional.push(arg);
     }
   }
 
@@ -89,9 +112,64 @@ async function main() {
       return;
     }
 
+    if (command === 'refresh-sources') {
+      const result = await withTelegram(config, (client) => refreshTelegramSources({
+        client,
+        store,
+        config
+      }));
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
     if (command === 'db-sources') {
       const result = await store.listSources({ includeDisabled: options.includeDisabled });
       console.log(JSON.stringify({ sources: result }, null, 2));
+      return;
+    }
+
+    if (command === 'enable-source') {
+      const sourceId = options.positional[0];
+      if (!sourceId) {
+        throw new Error('enable-source requires SOURCE_ID');
+      }
+      const source = await store.setSourceEnabled(sourceId, true);
+      if (!source) {
+        throw new Error(`Unknown source: ${sourceId}. Run refresh-sources first.`);
+      }
+      if (options.tags.length) {
+        await store.setSourceTags(sourceId, options.tags);
+      }
+      const [updated] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
+      console.log(JSON.stringify({ source: updated }, null, 2));
+      return;
+    }
+
+    if (command === 'disable-source') {
+      const sourceId = options.positional[0];
+      if (!sourceId) {
+        throw new Error('disable-source requires SOURCE_ID');
+      }
+      const source = await store.setSourceEnabled(sourceId, false);
+      if (!source) {
+        throw new Error(`Unknown source: ${sourceId}. Run refresh-sources first.`);
+      }
+      const [updated] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
+      console.log(JSON.stringify({ source: updated }, null, 2));
+      return;
+    }
+
+    if (command === 'set-source-tags') {
+      const sourceId = options.positional[0];
+      if (!sourceId) {
+        throw new Error('set-source-tags requires SOURCE_ID');
+      }
+      const source = await store.setSourceTags(sourceId, options.tags);
+      if (!source) {
+        throw new Error(`Unknown source: ${sourceId}. Run refresh-sources first.`);
+      }
+      const [updated] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
+      console.log(JSON.stringify({ source: updated }, null, 2));
       return;
     }
 

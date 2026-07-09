@@ -118,16 +118,50 @@ export async function listTelegramSources({ client, allowedSourceIds = [] }) {
     .filter((source) => source.sourceId && source.title);
 }
 
+async function selectedSourceIds({ store, config, sourceIds = [] }) {
+  if (sourceIds.length) {
+    return sourceIds.map(String);
+  }
+
+  if ((config.allowedSourceIds || []).length) {
+    return config.allowedSourceIds.map(String);
+  }
+
+  const enabledSources = await store.listSources();
+  return enabledSources.map((source) => source.sourceId);
+}
+
+export async function refreshTelegramSources({ client, store, config }) {
+  const explicitAllowed = (config.allowedSourceIds || []).map(String);
+  const sources = await listTelegramSources({
+    client,
+    allowedSourceIds: explicitAllowed
+  });
+
+  for (const source of sources) {
+    await store.upsertSource(source, {
+      preserveEnabled: explicitAllowed.length === 0,
+      preserveTags: true
+    });
+  }
+
+  return {
+    sourceCount: sources.length,
+    selectedSourceCount: sources.filter((source) => source.enabled).length,
+    sources
+  };
+}
+
 export async function syncTelegramMessages({ client, store, config, sourceIds, limit, minDate } = {}) {
-  const allowed = new Set((sourceIds?.length ? sourceIds : config.allowedSourceIds).map(String));
+  const allowed = new Set(await selectedSourceIds({ store, config, sourceIds }));
   if (!allowed.size) {
-    throw new Error('ALLOWED_SOURCE_IDS must contain at least one Telegram source id before syncing');
+    throw new Error('No selected Telegram sources. Set ALLOWED_SOURCE_IDS or run refresh-sources and enable-source first.');
   }
 
   const sources = await listTelegramSources({ client, allowedSourceIds: [...allowed] });
 
   for (const source of sources) {
-    await store.upsertSource(source);
+    await store.upsertSource(source, { preserveTags: true });
   }
 
   const enabledSources = sources.filter((source) => source.enabled);

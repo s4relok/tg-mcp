@@ -32,21 +32,67 @@ export class MongoTelegramStore {
     await this.client.close();
   }
 
-  async upsertSource(source) {
+  async upsertSource(source, { preserveEnabled = false, preserveTags = true } = {}) {
     const now = new Date();
+    const set = {
+      ...source,
+      updatedAt: now
+    };
+
+    if (preserveEnabled) {
+      delete set.enabled;
+    }
+    if (preserveTags) {
+      delete set.tags;
+    }
+
     await this.sources.updateOne(
       { sourceId: source.sourceId },
       {
-        $set: {
-          ...source,
-          updatedAt: now
-        },
+        $set: set,
         $setOnInsert: {
+          enabled: source.enabled ?? false,
+          tags: source.tags || [],
           createdAt: now
         }
       },
       { upsert: true }
     );
+  }
+
+  async setSourceEnabled(sourceId, enabled) {
+    const result = await this.sources.findOneAndUpdate(
+      { sourceId },
+      {
+        $set: {
+          enabled,
+          updatedAt: new Date()
+        }
+      },
+      {
+        returnDocument: 'after'
+      }
+    );
+
+    return result;
+  }
+
+  async setSourceTags(sourceId, tags) {
+    const normalizedTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
+    const result = await this.sources.findOneAndUpdate(
+      { sourceId },
+      {
+        $set: {
+          tags: normalizedTags,
+          updatedAt: new Date()
+        }
+      },
+      {
+        returnDocument: 'after'
+      }
+    );
+
+    return result;
   }
 
   async upsertMessages(messages) {
