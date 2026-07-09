@@ -69,6 +69,7 @@ test('OpenAPI endpoint exposes REST fallback schema', async () => {
     assert.equal(body.openapi, '3.1.0');
     assert.ok(body.paths['/tg-mcp/api/digest/daily']);
     assert.ok(body.paths['/tg-mcp/api/search']);
+    assert.ok(body.paths['/tg-mcp/api/sync/status']);
   } finally {
     server.close();
   }
@@ -107,6 +108,10 @@ test('REST fallback endpoints expose digest service data', async () => {
 
     const sources = await (await fetch(`${baseUrl}/sources`)).json();
     assert.equal(sources.sources[0].sourceId, 'chat-1');
+
+    const syncStatus = await (await fetch(`${baseUrl}/sync/status?sourceQuery=project`)).json();
+    assert.equal(syncStatus.status, 'never_synced');
+    assert.equal(syncStatus.sources[0].sourceId, 'chat-1');
 
     const digest = await (await fetch(`${baseUrl}/digest/daily?date=2026-07-09&timezone=UTC&timelineLimit=1&sourceQuery=project`)).json();
     assert.equal(digest.messageCount, 2);
@@ -215,11 +220,15 @@ test('MCP endpoint exposes Telegram tools', async () => {
     const names = tools.tools.map((tool) => tool.name);
 
     assert.ok(names.includes('get_daily_digest'));
+    assert.ok(names.includes('get_sync_status'));
     assert.ok(names.includes('get_source_summary'));
     assert.ok(names.includes('search_telegram_messages'));
 
     const result = await client.callTool({ name: 'list_sources', arguments: {} });
     assert.equal(result.structuredContent.sources[0].sourceId, 'chat-1');
+
+    const syncStatus = await client.callTool({ name: 'get_sync_status', arguments: {} });
+    assert.equal(syncStatus.structuredContent.status, 'never_synced');
 
     await transport.close();
   } finally {

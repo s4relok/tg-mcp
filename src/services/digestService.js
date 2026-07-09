@@ -9,6 +9,7 @@ const ACTION_PATTERN = /(todo|action|follow up|fix|check|please|pls|надо|н�
 const DECISION_PATTERN = /(decision|decided|agreed|resolved|итог|решили|решил|договорились|согласовали|финально)/i;
 const DEFAULT_TIMELINE_LIMIT = 80;
 const MAX_TIMELINE_LIMIT = 200;
+const DEFAULT_STALE_AFTER_HOURS = 24;
 
 function toIso(value) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -79,6 +80,63 @@ function publicMessage(message, sourceById = new Map()) {
     text: message.text || '',
     link: message.link || null
   };
+}
+
+function hoursSince(value, now) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return Math.max(0, (now.getTime() - date.getTime()) / (60 * 60 * 1000));
+}
+
+function sourceSyncStatus(source, { now, staleAfterHours }) {
+  const ageHours = hoursSince(source.lastSyncedAt, now);
+  const status = ageHours === null
+    ? 'never_synced'
+    : ageHours > staleAfterHours
+      ? 'stale'
+      : 'ok';
+
+  return {
+    sourceId: source.sourceId,
+    title: source.title,
+    username: source.username || null,
+    type: source.type || 'unknown',
+    enabled: source.enabled !== false,
+    tags: source.tags || [],
+    status,
+    lastSyncedAt: source.lastSyncedAt ? toIso(source.lastSyncedAt) : null,
+    lastSyncedMessageId: source.lastSyncedMessageId || null,
+    lastSyncMessageCount: source.lastSyncMessageCount ?? null,
+    ageHours: ageHours === null ? null : Number(ageHours.toFixed(2))
+  };
+}
+
+function overallSyncStatus(sources) {
+  if (!sources.length) {
+    return 'no_sources';
+  }
+
+  const statuses = new Set(sources.map((source) => source.status));
+  if (statuses.size === 1) {
+    return [...statuses][0];
+  }
+
+  if (statuses.has('never_synced')) {
+    return 'never_synced';
+  }
+
+  if (statuses.has('stale')) {
+    return 'stale';
+  }
+
+  return 'mixed';
 }
 
 function messagePreview(message, sourceById) {
@@ -230,6 +288,40 @@ export class TelegramDigestService {
         lastSyncMessageCount: source.lastSyncMessageCount ?? null,
         updatedAt: source.updatedAt ? toIso(source.updatedAt) : null
       }))
+    };
+  }
+
+  async getSyncStatus({ sourceIds = [], tags = [], sourceQuery = '', includeDisabled = false, staleAfterHours = DEFAULT_STALE_AFTER_HOURS, now = new Date() } = {}) {
+    const parsedStaleAfterHours = Number(staleAfterHours);
+    const effectiveStaleAfterHours = Number.isFinite(parsedStaleAfterHours) && parsedStaleAfterHours > 0
+      ? parsedStaleAfterHours
+      : DEFAULT_STALE_AFTER_HOURS;
+    const sources = await this.store.listSources({
+      includeDisabled,
+      sourceIds,
+      tags,
+      sourceQuery
+    });
+    const syncSources = sources.map((source) => sourceSyncStatus(source, {
+      now,
+      staleAfterHours: effectiveStaleAfterHours
+    }));
+    const counts = syncSources.reduce((acc, source) => {
+      acc[source.status] = (acc[source.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      status: overallSyncStatus(syncSources),
+      staleAfterHours: effectiveStaleAfterHours,
+      generatedAt: now.toISOString(),
+      sourceCount: syncSources.length,
+      counts: {
+        ok: counts.ok || 0,
+        stale: counts.stale || 0,
+        neverSynced: counts.never_synced || 0
+      },
+      sources: syncSources
     };
   }
 

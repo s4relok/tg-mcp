@@ -109,3 +109,11 @@ export function parseActionItemsQuery(query) {
     ...sourceFilters(query)
   };
 }
+
+export function parseSyncStatusQuery(query) {
+  return {
+    includeDisabled: toBoolean(query.includeDisabled),
+    staleAfterHours: toInteger(query.staleAfterHours, undefined),
+    ...sourceFilters(query)
+  };
+}

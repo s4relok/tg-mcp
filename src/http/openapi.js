@@ -65,6 +65,20 @@ export function createOpenApiDocument(config) {
           }
         }
       },
+      [`${api}/sync/status`]: {
+        get: {
+          operationId: 'getSyncStatus',
+          summary: 'Get Telegram sync freshness status',
+          parameters: [
+            parameter('includeDisabled', 'Include disabled sources.', { type: 'boolean' }),
+            parameter('staleAfterHours', 'Mark sources stale after this many hours. Defaults to 24.', { type: 'integer', minimum: 1, maximum: 168 }),
+            ...sourceFilterParameters
+          ],
+          responses: {
+            200: jsonResponse('Telegram source sync status.')
+          }
+        }
+      },
       [`${api}/digest/daily`]: {
         get: {
           operationId: 'getDailyDigest',

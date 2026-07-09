@@ -56,6 +56,23 @@ export function createTelegramMcpServer({ digestService, config }) {
   );
 
   server.registerTool(
+    'get_sync_status',
+    {
+      title: 'Get Telegram sync status',
+      description: 'Check whether selected Telegram sources have fresh synced data before summarizing or searching.',
+      inputSchema: {
+        includeDisabled: z.boolean().optional().describe('Include disabled sources.'),
+        staleAfterHours: z.number().int().min(1).max(168).optional().describe('Mark sources stale after this many hours. Defaults to 24.'),
+        ...sourceFilterSchema
+      },
+      annotations: {
+        readOnlyHint: true
+      }
+    },
+    async (args) => toolResult(await digestService.getSyncStatus(args))
+  );
+
+  server.registerTool(
     'get_daily_digest',
     {
       title: 'Get daily Telegram digest',

@@ -79,6 +79,64 @@ test('listSources can find sources by title query', async () => {
   assert.equal(result.sources[0].title, 'Project Chat');
 });
 
+test('getSyncStatus reports fresh, stale, and unsynced sources', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [
+      {
+        sourceId: 'fresh',
+        title: 'Fresh Chat',
+        enabled: true,
+        tags: ['work'],
+        lastSyncedAt: new Date('2026-07-09T09:30:00.000Z'),
+        lastSyncedMessageId: 10,
+        lastSyncMessageCount: 3
+      },
+      {
+        sourceId: 'stale',
+        title: 'Stale Chat',
+        enabled: true,
+        tags: ['work'],
+        lastSyncedAt: new Date('2026-07-08T08:00:00.000Z'),
+        lastSyncedMessageId: 7,
+        lastSyncMessageCount: 1
+      },
+      {
+        sourceId: 'new',
+        title: 'Never Synced Chat',
+        enabled: true,
+        tags: ['work']
+      }
+    ]
+  });
+  const service = createTelegramDigestService(store);
+
+  const result = await service.getSyncStatus({
+    tags: ['work'],
+    staleAfterHours: 24,
+    now: new Date('2026-07-09T10:00:00.000Z')
+  });
+
+  assert.equal(result.status, 'never_synced');
+  assert.equal(result.sourceCount, 3);
+  assert.deepEqual(result.counts, {
+    ok: 1,
+    stale: 1,
+    neverSynced: 1
+  });
+  assert.equal(result.sources.find((source) => source.sourceId === 'fresh').status, 'ok');
+  assert.equal(result.sources.find((source) => source.sourceId === 'fresh').ageHours, 0.5);
+  assert.equal(result.sources.find((source) => source.sourceId === 'stale').status, 'stale');
+  assert.equal(result.sources.find((source) => source.sourceId === 'new').status, 'never_synced');
+});
+
+test('getSyncStatus reports no_sources when filters match nothing', async () => {
+  const service = createFixtureService();
+  const result = await service.getSyncStatus({ sourceQuery: 'missing' });
+
+  assert.equal(result.status, 'no_sources');
+  assert.equal(result.sourceCount, 0);
+});
+
 test('getDailyDigest summarizes selected Telegram messages', async () => {
   const service = createFixtureService();
   const result = await service.getDailyDigest({

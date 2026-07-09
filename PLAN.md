@@ -160,6 +160,11 @@ Keep tools focused and read-only.
 - Use when the user asks what Telegram sources are available.
 - Returns enabled sources, tags, and last sync time.
 
+`get_sync_status`
+
+- Use before summaries/search when the user needs to know whether Telegram data is fresh.
+- Returns per-source freshness, stale/never-synced markers, and last sync metadata.
+
 `get_daily_digest`
 
 - Use when the user asks for today's/yesterday's Telegram summary.
@@ -308,6 +313,7 @@ Acceptance:
 
 - ChatGPT can ask for today's digest;
 - search returns useful hits with links.
+- ChatGPT can detect and report missing or stale Telegram sync data.
 
 ### Phase 4: VPS deploy
 

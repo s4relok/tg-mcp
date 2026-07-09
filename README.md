@@ -12,6 +12,7 @@ Read-only Telegram digest MCP server for selected Telegram chats and channels.
 - Optional read-only Telegram slash bot.
 - Read-only MCP tools:
   - `list_sources`
+  - `get_sync_status`
   - `get_daily_digest`
   - `get_period_summary`
   - `search_telegram_messages`
@@ -38,6 +39,7 @@ REST/OpenAPI fallback:
 
 ```bash
 curl http://127.0.0.1:3010/tg-mcp/openapi.json
+curl "http://127.0.0.1:3010/tg-mcp/api/sync/status"
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?timelineLimit=80"
 curl "http://127.0.0.1:3010/tg-mcp/api/sources/<sourceId>/summary?date=2026-07-09"
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?sourceQuery=project"
@@ -128,6 +130,14 @@ TELEGRAM_SYNC_ON_START=true
 If credentials, session, or selected sources are missing, the worker logs a warning and waits for the next interval. It never prompts from the systemd service.
 
 Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports.
+
+Check data freshness:
+
+```bash
+curl "http://127.0.0.1:3010/tg-mcp/api/sync/status?staleAfterHours=24"
+```
+
+The MCP tool `get_sync_status` exposes the same source freshness state to ChatGPT so it can say when data is missing or stale before summarizing.
 
 ## Digest cache
 

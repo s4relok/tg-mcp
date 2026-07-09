@@ -5,6 +5,7 @@ import {
   parsePeriodSummaryQuery,
   parseSearchQuery,
   parseSourceSummaryQuery,
+  parseSyncStatusQuery,
   parseSourcesQuery
 } from './query.js';
 
@@ -23,6 +24,10 @@ export function registerApiRoutes(app, { config, digestService, auth }) {
 
   app.get(`${basePath}/sources`, auth, asyncHandler(async (req, res) => {
     res.json(await digestService.listSources(parseSourcesQuery(req.query)));
+  }));
+
+  app.get(`${basePath}/sync/status`, auth, asyncHandler(async (req, res) => {
+    res.json(await digestService.getSyncStatus(parseSyncStatusQuery(req.query)));
   }));
 
   app.get(`${basePath}/digest/daily`, auth, asyncHandler(async (req, res) => {
