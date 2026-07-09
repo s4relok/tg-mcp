@@ -2,21 +2,21 @@
 
 ## Goal
 
-Build a fast read-only ChatGPT MCP integration for a "Sales Expert" assistant that can use Telegram context.
+Build a fast read-only ChatGPT MCP integration that gives ChatGPT controlled access to one Telegram account and selected Telegram chats/channels.
 
 Primary prompt:
 
 ```text
-Give me today's sales summary from Telegram.
+Give me today's Telegram digest.
 ```
 
 The assistant should help with:
 
-- daily and weekly sales digests;
-- lead/customer mentions;
-- objections and follow-up opportunities;
-- search across selected Telegram channels/chats;
-- channel or account summaries.
+- daily and weekly Telegram digests;
+- summaries for selected chats/channels;
+- important messages, decisions, questions, links, and action items;
+- search across selected Telegram chats/channels;
+- surrounding context for a specific message.
 
 ## Current VPS facts
 
@@ -84,7 +84,7 @@ https://tg.celticspear.com/mcp
 Telegram account / bot
    -> tg sync worker
    -> MongoDB
-   -> Sales Expert service layer
+   -> Telegram digest service layer
    -> MCP tools at /mcp
    -> ChatGPT web
 ```
@@ -132,7 +132,7 @@ Text index:
 text, senderName, source title/tags
 ```
 
-`sales_digests`
+`tg_digests`
 
 - `periodStart`
 - `periodEnd`
@@ -140,9 +140,10 @@ text, senderName, source title/tags
 - `timezone`
 - `summary`
 - `highlights`
-- `leads`
-- `objections`
-- `followUps`
+- `questions`
+- `decisions`
+- `actionItems`
+- `links`
 - `generatedAt`
 
 `sync_state`
@@ -159,20 +160,20 @@ Keep tools focused and read-only.
 - Use when the user asks what Telegram sources are available.
 - Returns enabled sources, tags, and last sync time.
 
-`get_daily_sales_digest`
+`get_daily_digest`
 
-- Use when the user asks for today's/yesterday's sales summary.
+- Use when the user asks for today's/yesterday's Telegram summary.
 - Inputs: `date`, `timezone`, optional `sourceIds`, optional `tags`.
-- Output: summary, important threads, leads, objections, follow-ups, links to source messages.
+- Output: summary, important threads, decisions, open questions, action items, links to source messages.
 
-`get_period_sales_summary`
+`get_period_summary`
 
 - Use for weekly/monthly/custom period summaries.
 - Inputs: `from`, `to`, `timezone`, optional filters.
 
-`search_telegram_sales_messages`
+`search_telegram_messages`
 
-- Use when the user searches for a customer, product, objection, competitor, price, bug, or deal.
+- Use when the user searches for a topic, person, project, link, bug, decision, file, or discussion.
 - Inputs: query, date range, source filters, limit.
 - Output: ranked message hits with short context and links.
 
@@ -181,18 +182,18 @@ Keep tools focused and read-only.
 - Use after search when the user wants the surrounding conversation.
 - Inputs: `sourceId`, `messageId`, `before`, `after`.
 
-`get_follow_up_candidates`
+`get_action_items`
 
-- Use when the user asks what needs follow-up.
+- Use when the user asks what needs attention or follow-up.
 - Inputs: date range and filters.
 - Output: candidate threads with reason, last message, suggested next action.
 
-## Sales Expert behavior
+## Assistant behavior
 
 The assistant should:
 
-- prioritize opportunities, blockers, objections, customer intent, pricing questions, and unanswered asks;
-- summarize by business impact, not by chronological chat log;
+- prioritize important messages, blockers, decisions, unanswered questions, links, and action items;
+- summarize by practical importance, not by chronological chat log;
 - include direct Telegram message links when available;
 - avoid exposing raw private chat dumps unless the user asks for details;
 - clearly say when data is missing or stale.
@@ -215,7 +216,7 @@ The assistant should:
 
 ```ini
 [Unit]
-Description=Telegram Sales MCP
+Description=Telegram Digest MCP
 After=network-online.target mongod.service
 Wants=network-online.target
 Requires=mongod.service
@@ -288,10 +289,10 @@ Acceptance:
 - messages appear in Mongo;
 - sync can restart without duplicates.
 
-### Phase 3: Sales tools
+### Phase 3: Telegram digest tools
 
-- Implement `search_telegram_sales_messages`.
-- Implement `get_daily_sales_digest`.
+- Implement `search_telegram_messages`.
+- Implement `get_daily_digest`.
 - Implement `get_message_context`.
 - Add Mongo indexes.
 
@@ -315,7 +316,7 @@ Acceptance:
 ### Phase 5: polish
 
 - Add digest cache.
-- Add `get_follow_up_candidates`.
+- Add `get_action_items`.
 - Add basic admin CLI commands:
   - `sync`
   - `list-sources`
@@ -336,10 +337,10 @@ Acceptance:
 If useful, add a Telegram bot for quick checks:
 
 ```text
-/sales_today
-/sales_week
+/digest_today
+/digest_week
 /search <query>
-/followups
+/actions
 ```
 
 This is separate from the ChatGPT MCP endpoint `/mcp`.
