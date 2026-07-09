@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from 'node:process';
 
 import { loadConfig } from './config.js';
 import { createReadinessReport } from './services/doctor.js';
+import { setupEnvFile } from './services/envSetup.js';
 import { findSourcesForSelection, selectSource } from './services/sourceAdmin.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import {
@@ -15,6 +16,7 @@ import {
 
 function usage() {
   console.log(`Usage:
+  npm run cli -- setup-env [--env-path PATH] [--production] [--force] [--set KEY=VALUE] [--from-env KEY]
   npm run cli -- login
   npm run cli -- list-sources
   npm run cli -- refresh-sources
@@ -35,6 +37,8 @@ function parseArgs(argv) {
   const options = {
     sourceIds: [],
     tags: [],
+    fromEnvKeys: [],
+    setValues: {},
     positional: []
   };
 
@@ -64,6 +68,32 @@ function parseArgs(argv) {
       }
       options.tags.push(argv[index + 1]);
       index += 1;
+    } else if (arg === '--env-path' || arg === '--env-file') {
+      if (!argv[index + 1]) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.envFile = argv[index + 1];
+      index += 1;
+    } else if (arg === '--set') {
+      if (!argv[index + 1]) {
+        throw new Error('--set requires KEY=VALUE');
+      }
+      const [key, ...valueParts] = argv[index + 1].split('=');
+      if (!key || !valueParts.length) {
+        throw new Error('--set requires KEY=VALUE');
+      }
+      options.setValues[key] = valueParts.join('=');
+      index += 1;
+    } else if (arg === '--from-env') {
+      if (!argv[index + 1]) {
+        throw new Error('--from-env requires a variable name');
+      }
+      options.fromEnvKeys.push(argv[index + 1]);
+      index += 1;
+    } else if (arg === '--production') {
+      options.production = true;
+    } else if (arg === '--force') {
+      options.force = true;
     } else if (arg === '--include-disabled') {
       options.includeDisabled = true;
     } else if (arg === '--telegram') {
@@ -114,6 +144,27 @@ async function main() {
   const { command, options } = parseArgs(process.argv);
   if (!command || command === '--help' || command === '-h') {
     usage();
+    return;
+  }
+
+  if (command === 'setup-env') {
+    const fromEnvValues = {};
+    for (const key of options.fromEnvKeys) {
+      if (process.env[key] === undefined) {
+        throw new Error(`Environment variable is not set: ${key}`);
+      }
+      fromEnvValues[key] = process.env[key];
+    }
+    const result = await setupEnvFile({
+      envFile: options.envFile || '.env',
+      production: Boolean(options.production),
+      force: Boolean(options.force),
+      values: {
+        ...fromEnvValues,
+        ...options.setValues
+      }
+    });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
 

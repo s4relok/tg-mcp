@@ -282,6 +282,7 @@ Acceptance:
 
 ### Phase 2: Telegram ingestion
 
+- Add `setup-env` for safe env bootstrapping and auth token generation.
 - Add GramJS login and session file support.
 - Add explicit `npm run cli -- login` setup command.
 - Add `list_sources`.

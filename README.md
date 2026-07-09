@@ -23,7 +23,7 @@ Read-only Telegram digest MCP server for selected Telegram chats and channels.
 
 ```bash
 npm ci
-cp .env.example .env
+npm run cli -- setup-env
 npm test
 npm start
 ```
@@ -57,6 +57,22 @@ TELEGRAM_API_HASH=
 TELEGRAM_SESSION_FILE=/srv/tg-mcp/shared/sessions/telegram.session
 ALLOWED_SOURCE_IDS=
 ```
+
+Create or update the env file:
+
+```bash
+npm run cli -- setup-env --set TELEGRAM_API_ID=<api_id> --set TELEGRAM_API_HASH=<api_hash>
+```
+
+For the VPS layout:
+
+```bash
+export TELEGRAM_API_ID=<api_id>
+export TELEGRAM_API_HASH=<api_hash>
+npm run cli -- setup-env --production --env-path /srv/tg-mcp/shared/.env --from-env TELEGRAM_API_ID --from-env TELEGRAM_API_HASH
+```
+
+Existing secrets are preserved unless you pass a new value with `--set` or `--from-env`. The command writes mode `0600`, creates a backup before overwriting an existing file, and generates `APP_AUTH_TOKEN` when it is missing.
 
 List available sources:
 
