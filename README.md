@@ -117,6 +117,19 @@ npm run cli -- doctor --telegram
 
 `doctor` returns machine-readable checks plus `nextSteps` with the next safe commands for the current setup state. `doctor --telegram` also performs a non-interactive authorization check with the existing session file.
 
+## Admin operations
+
+Authenticated admin endpoints are available for operations that should not be exposed as MCP tools:
+
+```bash
+curl -X POST http://127.0.0.1:3010/admin/sync \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceIds":["<sourceId>"],"limit":100}'
+```
+
+Use `{"backfillDays":7}` to bypass the incremental cursor for a historical import. The endpoint uses the existing Telegram session file and never prompts.
+
 ## Background sync
 
 The HTTP service can run a safe background sync loop after the Telegram session file exists:

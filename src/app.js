@@ -9,6 +9,38 @@ import { requireAppToken } from './http/auth.js';
 import { createOpenApiDocument } from './http/openapi.js';
 import { createTelegramMcpServer } from './mcp/server.js';
 import { createReadinessReport } from './services/doctor.js';
+import { createAuthorizedTelegramClient, syncTelegramMessages } from './telegram/telegramSync.js';
+
+function toArray(value) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(toArray);
+  }
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toPositiveInteger(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Expected positive integer, got ${value}`);
+  }
+  return parsed;
+}
+
+function minDateFromBackfillDays(days, now = new Date()) {
+  if (!days) {
+    return undefined;
+  }
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+}
 
 function jsonRpcError(res, status, message) {
   res.status(status).json({
@@ -21,13 +53,16 @@ function jsonRpcError(res, status, message) {
   });
 }
 
-export function createApp({ config, store, digestService }) {
+export function createApp({ config, store, digestService, telegramAdmin = {} }) {
   const app = createMcpExpressApp({
     host: config.host,
     allowedHosts: config.allowedHosts
   });
   const auth = requireAppToken(config);
   const transports = new Map();
+  const createTelegramClient = telegramAdmin.createClient || createAuthorizedTelegramClient;
+  const syncMessages = telegramAdmin.syncMessages || syncTelegramMessages;
+  const now = telegramAdmin.now || (() => new Date());
 
   app.get('/health', async (_req, res) => {
     try {
@@ -66,6 +101,35 @@ export function createApp({ config, store, digestService }) {
       res.status(report.status === 'error' ? 503 : 200).json(report);
     } catch (caught) {
       next(caught);
+    }
+  });
+
+  app.post('/admin/sync', auth, async (req, res, next) => {
+    let client = null;
+    try {
+      const body = req.body || {};
+      const backfillDays = toPositiveInteger(body.backfillDays);
+      client = await createTelegramClient(config);
+      const result = await syncMessages({
+        client,
+        store,
+        config,
+        sourceIds: toArray(body.sourceIds ?? body.sourceId),
+        limit: toPositiveInteger(body.limit),
+        minDate: minDateFromBackfillDays(backfillDays, now())
+      });
+
+      res.json({
+        status: 'ok',
+        backfillDays: backfillDays || null,
+        ...result
+      });
+    } catch (caught) {
+      next(caught);
+    } finally {
+      if (client?.disconnect) {
+        await client.disconnect();
+      }
     }
   });
 

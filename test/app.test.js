@@ -199,6 +199,76 @@ test('admin doctor route is protected and returns readiness report', async () =>
   }
 });
 
+test('admin sync route is protected and runs Telegram sync', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
+  });
+  let disconnected = false;
+  let syncArgs = null;
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token', telegramSyncLimit: 25 },
+    store,
+    digestService: createTelegramDigestService(store),
+    telegramAdmin: {
+      now: () => new Date('2026-07-09T12:00:00.000Z'),
+      createClient: async () => ({
+        disconnect: async () => {
+          disconnected = true;
+        }
+      }),
+      syncMessages: async (args) => {
+        syncArgs = args;
+        return {
+          sourceCount: 1,
+          messageCount: 2,
+          sources: [
+            {
+              sourceId: 'chat-1',
+              title: 'Project Chat',
+              messageCount: 2,
+              lastSyncedMessageId: 42,
+              incremental: true
+            }
+          ]
+        };
+      }
+    }
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}/admin/sync`;
+
+    const unauthorized = await fetch(url, { method: 'POST' });
+    assert.equal(unauthorized.status, 401);
+
+    const authorized = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer secret-token',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sourceIds: ['chat-1'],
+        limit: 10,
+        backfillDays: 2
+      })
+    });
+    const body = await authorized.json();
+
+    assert.equal(authorized.status, 200);
+    assert.equal(body.status, 'ok');
+    assert.equal(body.messageCount, 2);
+    assert.deepEqual(syncArgs.sourceIds, ['chat-1']);
+    assert.equal(syncArgs.limit, 10);
+    assert.equal(syncArgs.minDate.toISOString(), '2026-07-07T12:00:00.000Z');
+    assert.equal(disconnected, true);
+  } finally {
+    server.close();
+  }
+});
+
 test('MCP endpoint exposes Telegram tools', async () => {
   const store = new MemoryTelegramStore({
     sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
