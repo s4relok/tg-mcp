@@ -6,6 +6,7 @@ Read-only Telegram digest MCP server for selected Telegram chats and channels.
 
 - Node.js 22 ESM service.
 - Express + MCP Streamable HTTP endpoint at `/mcp`.
+- REST/OpenAPI fallback under `/tg-mcp/api` and `/tg-mcp/openapi.json`.
 - MongoDB storage.
 - GramJS-based Telegram sync CLI.
 - Read-only MCP tools:
@@ -30,6 +31,16 @@ Health:
 ```bash
 curl http://127.0.0.1:3010/health
 ```
+
+REST/OpenAPI fallback:
+
+```bash
+curl http://127.0.0.1:3010/tg-mcp/openapi.json
+curl http://127.0.0.1:3010/tg-mcp/api/digest/daily
+curl "http://127.0.0.1:3010/tg-mcp/api/search?query=release"
+```
+
+If `APP_AUTH_TOKEN` is set, pass `Authorization: Bearer <token>` for REST and MCP calls.
 
 ## Telegram setup
 
@@ -116,4 +127,12 @@ Install Apache `/mcp` proxy:
 
 ```bash
 sudo ops/install-apache-proxy.sh
+```
+
+That installer exposes:
+
+```text
+https://celticspear.com/mcp
+https://celticspear.com/tg-mcp/openapi.json
+https://celticspear.com/tg-mcp/api/...
 ```

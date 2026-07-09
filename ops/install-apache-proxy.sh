@@ -4,14 +4,22 @@ set -euo pipefail
 SITE_CONF="${SITE_CONF:-/etc/apache2/sites-available/celticspear.com.conf}"
 BACKUP="$SITE_CONF.before-tg-mcp-$(date -u +%Y%m%d-%H%M%S)"
 
-if grep -q 'ProxyPass /mcp ' "$SITE_CONF"; then
-  echo "Apache /mcp proxy already exists in $SITE_CONF"
+INSERT=""
+if ! grep -q 'ProxyPass /mcp ' "$SITE_CONF"; then
+  INSERT="${INSERT}    ProxyPass /mcp http://127.0.0.1:3010/mcp\n    ProxyPassReverse /mcp http://127.0.0.1:3010/mcp\n"
+fi
+if ! grep -q 'ProxyPass /tg-mcp/ ' "$SITE_CONF"; then
+  INSERT="${INSERT}    ProxyPass /tg-mcp/ http://127.0.0.1:3010/tg-mcp/\n    ProxyPassReverse /tg-mcp/ http://127.0.0.1:3010/tg-mcp/\n"
+fi
+
+if [ -z "$INSERT" ]; then
+  echo "Apache tg-mcp proxies already exist in $SITE_CONF"
   exit 0
 fi
 
 cp "$SITE_CONF" "$BACKUP"
 
-perl -0pi -e 's#(\n\s*ProxyPreserveHost On\n)#$1    ProxyPass /mcp http://127.0.0.1:3010/mcp\n    ProxyPassReverse /mcp http://127.0.0.1:3010/mcp\n#' "$SITE_CONF"
+INSERT="$INSERT" perl -0pi -e 's#(\n\s*ProxyPreserveHost On\n)#$1$ENV{INSERT}#' "$SITE_CONF"
 
 if ! apache2ctl configtest; then
   cp "$BACKUP" "$SITE_CONF"
@@ -21,4 +29,4 @@ if ! apache2ctl configtest; then
 fi
 
 systemctl reload apache2.service
-echo "Installed Apache /mcp proxy. Backup: $BACKUP"
+echo "Installed Apache tg-mcp proxies. Backup: $BACKUP"

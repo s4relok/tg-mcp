@@ -59,6 +59,8 @@ export function loadConfig(env = process.env) {
     port: readNumber(env, 'PORT', 3010),
     publicBaseUrl,
     mcpPath: env.MCP_PATH || '/mcp',
+    restBasePath: env.REST_BASE_PATH || '/tg-mcp/api',
+    openApiPath: env.OPENAPI_PATH || '/tg-mcp/openapi.json',
     allowedHosts,
     appAuthToken: env.APP_AUTH_TOKEN || '',
 

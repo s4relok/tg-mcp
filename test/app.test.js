@@ -14,6 +14,8 @@ function testConfig() {
     port: 0,
     publicBaseUrl: 'http://127.0.0.1',
     mcpPath: '/mcp',
+    restBasePath: '/tg-mcp/api',
+    openApiPath: '/tg-mcp/openapi.json',
     allowedHosts: ['127.0.0.1', 'localhost'],
     appAuthToken: ''
   };
@@ -43,6 +45,104 @@ test('health endpoint reports ok', async () => {
     assert.equal(response.status, 200);
     assert.equal(body.status, 'ok');
     assert.equal(body.mcpPath, '/mcp');
+    assert.equal(body.restBasePath, '/tg-mcp/api');
+  } finally {
+    server.close();
+  }
+});
+
+test('OpenAPI endpoint exposes REST fallback schema', async () => {
+  const store = new MemoryTelegramStore();
+  const app = createApp({
+    config: testConfig(),
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const response = await fetch(`http://127.0.0.1:${port}/tg-mcp/openapi.json`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.openapi, '3.1.0');
+    assert.ok(body.paths['/tg-mcp/api/digest/daily']);
+    assert.ok(body.paths['/tg-mcp/api/search']);
+  } finally {
+    server.close();
+  }
+});
+
+test('REST fallback endpoints expose digest service data', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: ['work'] }],
+    messages: [
+      {
+        sourceId: 'chat-1',
+        messageId: 1,
+        date: '2026-07-09T06:00:00.000Z',
+        senderName: 'Andrei',
+        text: 'Decision: ship digest today'
+      },
+      {
+        sourceId: 'chat-1',
+        messageId: 2,
+        date: '2026-07-09T07:00:00.000Z',
+        senderName: 'Mira',
+        text: 'Need to check deployment?'
+      }
+    ]
+  });
+  const app = createApp({
+    config: testConfig(),
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const baseUrl = `http://127.0.0.1:${port}/tg-mcp/api`;
+
+    const sources = await (await fetch(`${baseUrl}/sources`)).json();
+    assert.equal(sources.sources[0].sourceId, 'chat-1');
+
+    const digest = await (await fetch(`${baseUrl}/digest/daily?date=2026-07-09&timezone=UTC`)).json();
+    assert.equal(digest.messageCount, 2);
+
+    const search = await (await fetch(`${baseUrl}/search?query=deployment`)).json();
+    assert.equal(search.count, 1);
+
+    const context = await (await fetch(`${baseUrl}/messages/context?sourceId=chat-1&messageId=2&before=1`)).json();
+    assert.equal(context.before[0].messageId, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test('REST fallback honors bearer auth when configured', async () => {
+  const store = new MemoryTelegramStore();
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token' },
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}/tg-mcp/api/sources`;
+
+    const unauthorized = await fetch(url);
+    assert.equal(unauthorized.status, 401);
+
+    const authorized = await fetch(url, {
+      headers: {
+        Authorization: 'Bearer secret-token'
+      }
+    });
+    assert.equal(authorized.status, 200);
   } finally {
     server.close();
   }

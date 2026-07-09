@@ -4,7 +4,9 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
+import { registerApiRoutes } from './http/apiRoutes.js';
 import { requireAppToken } from './http/auth.js';
+import { createOpenApiDocument } from './http/openapi.js';
 import { createTelegramMcpServer } from './mcp/server.js';
 
 function jsonRpcError(res, status, message) {
@@ -33,7 +35,9 @@ export function createApp({ config, store, digestService }) {
         status: 'ok',
         name: 'tg-mcp',
         storage,
-        mcpPath: config.mcpPath
+        mcpPath: config.mcpPath,
+        restBasePath: config.restBasePath,
+        openApiPath: config.openApiPath
       });
     } catch (error) {
       res.status(503).json({
@@ -50,6 +54,12 @@ export function createApp({ config, store, digestService }) {
       next(error);
     }
   });
+
+  app.get(config.openApiPath, (_req, res) => {
+    res.json(createOpenApiDocument(config));
+  });
+
+  registerApiRoutes(app, { config, digestService, auth });
 
   app.post(config.mcpPath, auth, async (req, res) => {
     const sessionId = req.get('mcp-session-id');
