@@ -70,6 +70,18 @@ Alternatively, put selected source ids into `ALLOWED_SOURCE_IDS`; env selection 
 
 The first Telegram command is interactive and writes the Telegram session file.
 
+## Background sync
+
+The HTTP service can run a safe background sync loop after the Telegram session file exists:
+
+```text
+TELEGRAM_SYNC_ENABLED=true
+TELEGRAM_SYNC_INTERVAL_SECONDS=300
+TELEGRAM_SYNC_ON_START=true
+```
+
+If credentials, session, or selected sources are missing, the worker logs a warning and waits for the next interval. It never prompts from the systemd service.
+
 ## VPS quick deploy
 
 The target server already has Apache, MongoDB, and bundled Node.js.

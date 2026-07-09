@@ -111,6 +111,33 @@ export async function createTelegramClient(config, prompts) {
   return client;
 }
 
+export async function createAuthorizedTelegramClient(config) {
+  if (!config.telegramApiId || !config.telegramApiHash) {
+    throw new Error('TELEGRAM_API_ID and TELEGRAM_API_HASH are required');
+  }
+
+  const sessionValue = await readSession(config.telegramSessionFile);
+  if (!sessionValue) {
+    throw new Error(`Telegram session file is empty or missing: ${config.telegramSessionFile}`);
+  }
+
+  const session = new StringSession(sessionValue);
+  const client = new TelegramClient(
+    session,
+    Number(config.telegramApiId),
+    config.telegramApiHash,
+    { connectionRetries: 5 }
+  );
+
+  await client.connect();
+  if (!(await client.checkAuthorization())) {
+    await client.disconnect();
+    throw new Error('Telegram session is not authorized. Run npm run cli -- list-sources interactively first.');
+  }
+
+  return client;
+}
+
 export async function listTelegramSources({ client, allowedSourceIds = [] }) {
   const dialogs = await client.getDialogs({});
   return dialogs

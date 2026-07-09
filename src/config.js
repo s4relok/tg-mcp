@@ -16,6 +16,15 @@ function readNumber(env, name, fallback) {
   return value;
 }
 
+function readBoolean(env, name, fallback) {
+  const raw = env[name];
+  if (raw === undefined || raw === '') {
+    return fallback;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+}
+
 function readList(env, name) {
   const raw = env[name];
   if (!raw) {
@@ -61,6 +70,9 @@ export function loadConfig(env = process.env) {
     telegramApiHash: env.TELEGRAM_API_HASH || '',
     telegramSessionFile: env.TELEGRAM_SESSION_FILE || './sessions/telegram.session',
     telegramSyncLimit: readNumber(env, 'TELEGRAM_SYNC_LIMIT', 200),
+    telegramSyncEnabled: readBoolean(env, 'TELEGRAM_SYNC_ENABLED', false),
+    telegramSyncIntervalSeconds: readNumber(env, 'TELEGRAM_SYNC_INTERVAL_SECONDS', 300),
+    telegramSyncOnStart: readBoolean(env, 'TELEGRAM_SYNC_ON_START', true),
     allowedSourceIds: readList(env, 'ALLOWED_SOURCE_IDS')
   };
 }
