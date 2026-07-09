@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from 'node:process';
 
 import { loadConfig } from './config.js';
 import { createReadinessReport } from './services/doctor.js';
+import { findSourcesForSelection, selectSource } from './services/sourceAdmin.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import {
   createTelegramClient,
@@ -18,6 +19,8 @@ function usage() {
   npm run cli -- list-sources
   npm run cli -- refresh-sources
   npm run cli -- db-sources
+  npm run cli -- find-sources QUERY
+  npm run cli -- select-source QUERY [--tag TAG]
   npm run cli -- enable-source SOURCE_ID [--tag TAG]
   npm run cli -- disable-source SOURCE_ID
   npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG]
@@ -183,6 +186,29 @@ async function main() {
     if (command === 'db-sources') {
       const result = await store.listSources({ includeDisabled: options.includeDisabled });
       console.log(JSON.stringify({ sources: result }, null, 2));
+      return;
+    }
+
+    if (command === 'find-sources') {
+      const query = options.positional.join(' ');
+      const result = await findSourcesForSelection(store, {
+        query,
+        includeDisabled: true
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (command === 'select-source') {
+      const query = options.positional.join(' ');
+      const result = await selectSource(store, {
+        query,
+        tags: options.tags
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status !== 'selected') {
+        process.exitCode = 1;
+      }
       return;
     }
 

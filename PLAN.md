@@ -286,6 +286,7 @@ Acceptance:
 - Add explicit `npm run cli -- login` setup command.
 - Add `list_sources`.
 - Add whitelist config.
+- Add query-based source selection commands for setup.
 - Sync last N messages per enabled source.
 - Store messages idempotently in Mongo.
 

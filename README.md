@@ -70,8 +70,8 @@ Save the source list into MongoDB, then enable selected chats/channels:
 
 ```bash
 npm run cli -- refresh-sources
-npm run cli -- db-sources --include-disabled
-npm run cli -- enable-source <id> --tag work
+npm run cli -- find-sources project
+npm run cli -- select-source "Project Alpha" --tag work
 npm run cli -- sync
 ```
 
@@ -80,6 +80,8 @@ Useful variants:
 ```bash
 npm run cli -- disable-source <id>
 npm run cli -- set-source-tags <id> --tag work --tag project-x
+npm run cli -- enable-source <id> --tag work
+npm run cli -- db-sources --include-disabled
 npm run cli -- sync --source-id <id> --limit 100
 npm run cli -- backfill --days 7 --limit 1000
 ```
