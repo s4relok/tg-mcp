@@ -77,21 +77,38 @@ export class MemoryTelegramStore {
     return { insertedOrUpdated: messages.length };
   }
 
-  async listSources({ includeDisabled = false, sourceIds = [], tags = [] } = {}) {
+  async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {
+    const normalizedQuery = sourceQuery.trim().toLowerCase();
     return this.sources
       .filter((source) => includeDisabled || source.enabled)
       .filter((source) => !sourceIds.length || sourceIds.includes(source.sourceId))
       .filter((source) => !tags.length || tags.some((tag) => source.tags.includes(tag)))
+      .filter((source) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+
+        const haystack = [
+          source.sourceId,
+          source.title,
+          source.username,
+          ...(source.tags || [])
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(normalizedQuery);
+      })
       .sort((a, b) => a.title.localeCompare(b.title));
   }
 
-  async resolveSourceIds({ sourceIds = [], tags = [], includeDisabled = false } = {}) {
-    const sources = await this.listSources({ sourceIds, tags, includeDisabled });
+  async resolveSourceIds({ sourceIds = [], tags = [], sourceQuery = '', includeDisabled = false } = {}) {
+    const sources = await this.listSources({ sourceIds, tags, sourceQuery, includeDisabled });
     return sources.map((source) => source.sourceId);
   }
 
-  async findMessages({ from, to, sourceIds = [], tags = [], query = '', limit = 100, sort = 'desc' } = {}) {
-    const resolvedSourceIds = await this.resolveSourceIds({ sourceIds, tags });
+  async findMessages({ from, to, sourceIds = [], tags = [], sourceQuery = '', query = '', limit = 100, sort = 'desc' } = {}) {
+    const resolvedSourceIds = await this.resolveSourceIds({ sourceIds, tags, sourceQuery });
     if (!resolvedSourceIds.length) {
       return [];
     }

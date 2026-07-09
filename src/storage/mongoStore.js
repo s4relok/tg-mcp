@@ -1,5 +1,9 @@
 import { MongoClient } from 'mongodb';
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export class MongoTelegramStore {
   constructor(db, client) {
     this.db = db;
@@ -153,7 +157,7 @@ export class MongoTelegramStore {
     };
   }
 
-  async listSources({ includeDisabled = false, sourceIds = [], tags = [] } = {}) {
+  async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {
     const filter = {};
     if (!includeDisabled) {
       filter.enabled = true;
@@ -164,6 +168,15 @@ export class MongoTelegramStore {
     if (tags.length) {
       filter.tags = { $in: tags };
     }
+    if (sourceQuery.trim()) {
+      const pattern = new RegExp(escapeRegex(sourceQuery.trim()), 'i');
+      filter.$or = [
+        { sourceId: pattern },
+        { title: pattern },
+        { username: pattern },
+        { tags: pattern }
+      ];
+    }
 
     return this.sources
       .find(filter)
@@ -171,8 +184,8 @@ export class MongoTelegramStore {
       .toArray();
   }
 
-  async resolveSourceIds({ sourceIds = [], tags = [], includeDisabled = false } = {}) {
-    const sources = await this.listSources({ sourceIds, tags, includeDisabled });
+  async resolveSourceIds({ sourceIds = [], tags = [], sourceQuery = '', includeDisabled = false } = {}) {
+    const sources = await this.listSources({ sourceIds, tags, sourceQuery, includeDisabled });
     return sources.map((source) => source.sourceId);
   }
 
@@ -181,11 +194,12 @@ export class MongoTelegramStore {
     to,
     sourceIds = [],
     tags = [],
+    sourceQuery = '',
     query = '',
     limit = 100,
     sort = 'desc'
   } = {}) {
-    const resolvedSourceIds = await this.resolveSourceIds({ sourceIds, tags });
+    const resolvedSourceIds = await this.resolveSourceIds({ sourceIds, tags, sourceQuery });
     if (resolvedSourceIds.length === 0) {
       return [];
     }

@@ -15,7 +15,8 @@ function toolResult(data) {
 
 const sourceFilterSchema = {
   sourceIds: z.array(z.string()).optional().describe('Optional Telegram source ids to include.'),
-  tags: z.array(z.string()).optional().describe('Optional source tags to include.')
+  tags: z.array(z.string()).optional().describe('Optional source tags to include.'),
+  sourceQuery: z.string().optional().describe('Optional case-insensitive source lookup by title, username, id, or tag.')
 };
 
 const digestExcerptSchema = {

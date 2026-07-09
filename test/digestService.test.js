@@ -46,6 +46,14 @@ test('listSources returns enabled sources by default', async () => {
   assert.equal(result.sources[0].sourceId, 'chat-1');
 });
 
+test('listSources can find sources by title query', async () => {
+  const service = createFixtureService();
+  const result = await service.listSources({ sourceQuery: 'project' });
+
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].title, 'Project Chat');
+});
+
 test('getDailyDigest summarizes selected Telegram messages', async () => {
   const service = createFixtureService();
   const result = await service.getDailyDigest({
@@ -88,6 +96,18 @@ test('getDailyDigest can omit timeline excerpts', async () => {
   assert.equal(result.timelineTruncated, false);
 });
 
+test('getDailyDigest can filter by source query', async () => {
+  const service = createFixtureService();
+  const result = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC',
+    sourceQuery: 'project'
+  });
+
+  assert.equal(result.messageCount, 2);
+  assert.deepEqual(result.sourceIds, ['chat-1']);
+});
+
 test('getSourceSummary summarizes a selected source', async () => {
   const service = createFixtureService();
   const result = await service.getSourceSummary({
@@ -121,6 +141,18 @@ test('searchMessages searches only enabled sources', async () => {
   const result = await service.searchMessages({ query: 'disabled', limit: 10 });
 
   assert.equal(result.count, 0);
+});
+
+test('searchMessages can filter by source query', async () => {
+  const service = createFixtureService();
+  const result = await service.searchMessages({
+    query: 'deploy',
+    sourceQuery: 'project',
+    limit: 10
+  });
+
+  assert.equal(result.count, 1);
+  assert.equal(result.results[0].sourceId, 'chat-1');
 });
 
 test('getMessageContext returns surrounding messages', async () => {

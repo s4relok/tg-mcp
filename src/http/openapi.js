@@ -10,7 +10,8 @@ function parameter(name, description, schema = { type: 'string' }) {
 
 const sourceFilterParameters = [
   parameter('sourceId', 'Telegram source id. Repeat or comma-separate for multiple values.'),
-  parameter('tag', 'Source tag. Repeat or comma-separate for multiple values.')
+  parameter('tag', 'Source tag. Repeat or comma-separate for multiple values.'),
+  parameter('sourceQuery', 'Case-insensitive source lookup by title, username, id, or tag.')
 ];
 
 function jsonResponse(description) {

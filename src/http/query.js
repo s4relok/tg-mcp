@@ -32,7 +32,8 @@ function toInteger(value, fallback) {
 export function sourceFilters(query) {
   return {
     sourceIds: toArray(query.sourceId ?? query.sourceIds),
-    tags: toArray(query.tag ?? query.tags)
+    tags: toArray(query.tag ?? query.tags),
+    sourceQuery: query.sourceQuery ? String(query.sourceQuery) : query.source ? String(query.source) : ''
   };
 }
 

@@ -159,8 +159,8 @@ export class TelegramDigestService {
     this.store = store;
   }
 
-  async listSources({ includeDisabled = false, sourceIds = [], tags = [] } = {}) {
-    const sources = await this.store.listSources({ includeDisabled, sourceIds, tags });
+  async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {
+    const sources = await this.store.listSources({ includeDisabled, sourceIds, tags, sourceQuery });
     return {
       sources: sources.map((source) => ({
         sourceId: source.sourceId,
@@ -177,7 +177,7 @@ export class TelegramDigestService {
     };
   }
 
-  async getDailyDigest({ date, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
+  async getDailyDigest({ date, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
     const range = dayRange(date, timezone);
     return this.getPeriodSummary({
       fromDate: range.from,
@@ -186,22 +186,24 @@ export class TelegramDigestService {
       timezone,
       sourceIds,
       tags,
+      sourceQuery,
       includeTimeline,
       timelineLimit
     });
   }
 
-  async getPeriodSummary({ from, to, fromDate, toDate, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
+  async getPeriodSummary({ from, to, fromDate, toDate, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
     const range = fromDate && toDate
       ? { from: fromDate, to: toDate }
       : normalizePeriod({ from, to, timezone });
-    const sources = await this.store.listSources({ sourceIds, tags });
+    const sources = await this.store.listSources({ sourceIds, tags, sourceQuery });
     const sourceById = new Map(sources.map((source) => [source.sourceId, source]));
     const messages = await this.store.findMessages({
       from: range.from,
       to: range.to,
       sourceIds,
       tags,
+      sourceQuery,
       sort: 'asc',
       limit: 500
     });
@@ -270,19 +272,20 @@ export class TelegramDigestService {
     };
   }
 
-  async searchMessages({ query, from, to, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], limit = 20 } = {}) {
+  async searchMessages({ query, from, to, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', limit = 20 } = {}) {
     if (!query || !query.trim()) {
       throw new Error('query is required');
     }
 
     const range = from && to ? normalizePeriod({ from, to, timezone }) : {};
-    const sources = await this.store.listSources({ sourceIds, tags });
+    const sources = await this.store.listSources({ sourceIds, tags, sourceQuery });
     const sourceById = new Map(sources.map((source) => [source.sourceId, source]));
     const messages = await this.store.findMessages({
       from: range.from,
       to: range.to,
       sourceIds,
       tags,
+      sourceQuery,
       query,
       limit
     });
@@ -316,15 +319,16 @@ export class TelegramDigestService {
     };
   }
 
-  async getActionItems({ from, to, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], limit = 50 } = {}) {
+  async getActionItems({ from, to, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', limit = 50 } = {}) {
     const range = from && to ? normalizePeriod({ from, to, timezone }) : dayRange(null, timezone);
-    const sources = await this.store.listSources({ sourceIds, tags });
+    const sources = await this.store.listSources({ sourceIds, tags, sourceQuery });
     const sourceById = new Map(sources.map((source) => [source.sourceId, source]));
     const messages = await this.store.findMessages({
       from: range.from,
       to: range.to,
       sourceIds,
       tags,
+      sourceQuery,
       limit: 500,
       sort: 'asc'
     });

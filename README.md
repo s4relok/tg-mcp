@@ -38,6 +38,7 @@ REST/OpenAPI fallback:
 curl http://127.0.0.1:3010/tg-mcp/openapi.json
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?timelineLimit=80"
 curl "http://127.0.0.1:3010/tg-mcp/api/sources/<sourceId>/summary?date=2026-07-09"
+curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?sourceQuery=project"
 curl "http://127.0.0.1:3010/tg-mcp/api/search?query=release"
 ```
 
