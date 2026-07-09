@@ -150,6 +150,39 @@ test('REST fallback honors bearer auth when configured', async () => {
   }
 });
 
+test('admin doctor route is protected and returns readiness report', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
+  });
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token', telegramSessionFile: './missing.session' },
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}/admin/doctor`;
+
+    const unauthorized = await fetch(url);
+    assert.equal(unauthorized.status, 401);
+
+    const authorized = await fetch(url, {
+      headers: {
+        Authorization: 'Bearer secret-token'
+      }
+    });
+    const body = await authorized.json();
+
+    assert.equal(authorized.status, 200);
+    assert.ok(['ok', 'warning'].includes(body.status));
+    assert.ok(body.checks.some((check) => check.name === 'mongodb'));
+  } finally {
+    server.close();
+  }
+});
+
 test('MCP endpoint exposes Telegram tools', async () => {
   const store = new MemoryTelegramStore({
     sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]

@@ -271,9 +271,16 @@ export class MongoTelegramStore {
 }
 
 export async function createMongoStore(config) {
-  const client = new MongoClient(config.mongoUrl);
-  await client.connect();
-  const store = new MongoTelegramStore(client.db(config.mongoDb), client);
-  await store.ensureIndexes();
-  return store;
+  const client = new MongoClient(config.mongoUrl, {
+    serverSelectionTimeoutMS: config.mongoServerSelectionTimeoutMs
+  });
+  try {
+    await client.connect();
+    const store = new MongoTelegramStore(client.db(config.mongoDb), client);
+    await store.ensureIndexes();
+    return store;
+  } catch (caught) {
+    await client.close(true);
+    throw caught;
+  }
 }

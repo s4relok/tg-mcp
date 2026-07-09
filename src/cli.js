@@ -2,6 +2,7 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 import { loadConfig } from './config.js';
+import { createReadinessReport } from './services/doctor.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import { createTelegramClient, listTelegramSources, refreshTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
 
@@ -15,6 +16,7 @@ function usage() {
   npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG]
   npm run cli -- sync [--limit N] [--source-id ID]
   npm run cli -- backfill --days N
+  npm run cli -- doctor [--telegram]
 `);
 }
 
@@ -54,6 +56,8 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === '--include-disabled') {
       options.includeDisabled = true;
+    } else if (arg === '--telegram') {
+      options.telegram = true;
     } else if (arg.startsWith('--')) {
       throw new Error(`Unknown argument: ${arg}`);
     } else {
@@ -100,9 +104,39 @@ async function main() {
   }
 
   const config = loadConfig();
-  const store = await createMongoStore(config);
+  let store;
+  try {
+    store = await createMongoStore(config);
+  } catch (caught) {
+    if (command !== 'doctor') {
+      throw caught;
+    }
+
+    store = {
+      health: async () => {
+        throw caught;
+      },
+      listSources: async () => {
+        throw new Error('MongoDB is unavailable; cannot list Telegram sources.');
+      },
+      close: async () => {}
+    };
+  }
 
   try {
+    if (command === 'doctor') {
+      const report = await createReadinessReport({
+        config,
+        store,
+        checkTelegram: Boolean(options.telegram)
+      });
+      console.log(JSON.stringify(report, null, 2));
+      if (report.status === 'error') {
+        process.exitCode = 1;
+      }
+      return;
+    }
+
     if (command === 'list-sources') {
       const sources = await withTelegram(config, (client) => listTelegramSources({
         client,

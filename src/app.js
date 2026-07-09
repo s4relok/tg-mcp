@@ -8,6 +8,7 @@ import { registerApiRoutes } from './http/apiRoutes.js';
 import { requireAppToken } from './http/auth.js';
 import { createOpenApiDocument } from './http/openapi.js';
 import { createTelegramMcpServer } from './mcp/server.js';
+import { createReadinessReport } from './services/doctor.js';
 
 function jsonRpcError(res, status, message) {
   res.status(status).json({
@@ -52,6 +53,19 @@ export function createApp({ config, store, digestService }) {
       res.json(await digestService.listSources({ includeDisabled: true }));
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.get('/admin/doctor', auth, async (req, res, next) => {
+    try {
+      const report = await createReadinessReport({
+        config,
+        store,
+        checkTelegram: req.query.telegram === 'true'
+      });
+      res.status(report.status === 'error' ? 503 : 200).json(report);
+    } catch (caught) {
+      next(caught);
     }
   });
 

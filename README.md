@@ -81,6 +81,15 @@ Alternatively, put selected source ids into `ALLOWED_SOURCE_IDS`; env selection 
 
 The first Telegram command is interactive and writes the Telegram session file.
 
+Check readiness:
+
+```bash
+npm run cli -- doctor
+npm run cli -- doctor --telegram
+```
+
+`doctor --telegram` performs a non-interactive authorization check with the existing session file.
+
 ## Background sync
 
 The HTTP service can run a safe background sync loop after the Telegram session file exists:

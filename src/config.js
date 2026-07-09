@@ -66,6 +66,7 @@ export function loadConfig(env = process.env) {
 
     mongoUrl: env.MONGO_URL || 'mongodb://127.0.0.1:27017',
     mongoDb: env.MONGO_DB || 'tg_mcp',
+    mongoServerSelectionTimeoutMs: readNumber(env, 'MONGO_SERVER_SELECTION_TIMEOUT_MS', 5000),
 
     telegramMode: env.TELEGRAM_MODE || 'user',
     telegramApiId: env.TELEGRAM_API_ID || '',
