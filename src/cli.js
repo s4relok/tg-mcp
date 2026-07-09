@@ -4,10 +4,17 @@ import { stdin as input, stdout as output } from 'node:process';
 import { loadConfig } from './config.js';
 import { createReadinessReport } from './services/doctor.js';
 import { createMongoStore } from './storage/mongoStore.js';
-import { createTelegramClient, listTelegramSources, refreshTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
+import {
+  createTelegramClient,
+  createTelegramLoginReport,
+  listTelegramSources,
+  refreshTelegramSources,
+  syncTelegramMessages
+} from './telegram/telegramSync.js';
 
 function usage() {
   console.log(`Usage:
+  npm run cli -- login
   npm run cli -- list-sources
   npm run cli -- refresh-sources
   npm run cli -- db-sources
@@ -86,12 +93,16 @@ function minDateFromDays(days) {
 
 async function withTelegram(config, callback) {
   const rl = readline.createInterface({ input, output });
+  let client = null;
   try {
-    const client = await createTelegramClient(config, {
+    client = await createTelegramClient(config, {
       ask: (question) => rl.question(question)
     });
     return await callback(client);
   } finally {
+    if (client?.disconnect) {
+      await client.disconnect();
+    }
     rl.close();
   }
 }
@@ -104,6 +115,19 @@ async function main() {
   }
 
   const config = loadConfig();
+
+  if (command === 'login') {
+    const result = await withTelegram(config, (client) => createTelegramLoginReport({
+      client,
+      config
+    }));
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.authorized) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   let store;
   try {
     store = await createMongoStore(config);

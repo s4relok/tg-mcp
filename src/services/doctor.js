@@ -27,7 +27,7 @@ async function sessionFileStatus(sessionFile) {
     });
   } catch (caught) {
     if (caught.code === 'ENOENT') {
-      return warn('telegram_session', 'Telegram session file is missing. Run an interactive Telegram CLI command first.', { sessionFile });
+      return warn('telegram_session', 'Telegram session file is missing. Run npm run cli -- login interactively first.', { sessionFile });
     }
     return error('telegram_session', caught.message, { sessionFile });
   }

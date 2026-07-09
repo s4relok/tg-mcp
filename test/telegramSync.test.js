@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { MemoryTelegramStore } from '../src/storage/memoryStore.js';
 import {
+  createTelegramLoginReport,
   listTelegramSources,
   normalizeTelegramMessage,
   normalizeTelegramSource,
@@ -46,6 +47,36 @@ const dialogs = [
     }
   }
 ];
+
+test('createTelegramLoginReport reports authorization state', async () => {
+  const okReport = await createTelegramLoginReport({
+    client: {
+      checkAuthorization: async () => true
+    },
+    config: {
+      telegramSessionFile: '/srv/tg-mcp/shared/sessions/telegram.session'
+    }
+  });
+  const errorReport = await createTelegramLoginReport({
+    client: {
+      checkAuthorization: async () => false
+    },
+    config: {
+      telegramSessionFile: '/srv/tg-mcp/shared/sessions/telegram.session'
+    }
+  });
+
+  assert.deepEqual(okReport, {
+    status: 'ok',
+    authorized: true,
+    sessionFile: '/srv/tg-mcp/shared/sessions/telegram.session'
+  });
+  assert.deepEqual(errorReport, {
+    status: 'error',
+    authorized: false,
+    sessionFile: '/srv/tg-mcp/shared/sessions/telegram.session'
+  });
+});
 
 test('normalizeTelegramSource marks only allowed sources enabled', () => {
   const source = normalizeTelegramSource(dialogs[0], { allowedSourceIds: ['1001'] });

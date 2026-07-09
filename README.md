@@ -61,6 +61,8 @@ ALLOWED_SOURCE_IDS=
 List available sources:
 
 ```bash
+npm run cli -- login
+npm run cli -- doctor --telegram
 npm run cli -- list-sources
 ```
 
@@ -84,7 +86,7 @@ npm run cli -- backfill --days 7 --limit 1000
 
 Alternatively, put selected source ids into `ALLOWED_SOURCE_IDS`; env selection overrides DB-enabled sources during sync.
 
-The first Telegram command is interactive and writes the Telegram session file.
+`login` is interactive and writes the Telegram session file. Later commands reuse that session and should not prompt unless Telegram requires reauthorization.
 
 Check readiness:
 

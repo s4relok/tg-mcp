@@ -132,10 +132,22 @@ export async function createAuthorizedTelegramClient(config) {
   await client.connect();
   if (!(await client.checkAuthorization())) {
     await client.disconnect();
-    throw new Error('Telegram session is not authorized. Run npm run cli -- list-sources interactively first.');
+    throw new Error('Telegram session is not authorized. Run npm run cli -- login interactively first.');
   }
 
   return client;
+}
+
+export async function createTelegramLoginReport({ client, config }) {
+  const authorized = typeof client.checkAuthorization === 'function'
+    ? await client.checkAuthorization()
+    : true;
+
+  return {
+    status: authorized ? 'ok' : 'error',
+    authorized,
+    sessionFile: config.telegramSessionFile
+  };
 }
 
 export async function listTelegramSources({ client, allowedSourceIds = [] }) {

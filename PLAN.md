@@ -283,6 +283,7 @@ Acceptance:
 ### Phase 2: Telegram ingestion
 
 - Add GramJS login and session file support.
+- Add explicit `npm run cli -- login` setup command.
 - Add `list_sources`.
 - Add whitelist config.
 - Sync last N messages per enabled source.
