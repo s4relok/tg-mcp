@@ -36,6 +36,11 @@ test('createReadinessReport returns warning when setup is incomplete', async () 
   assert.ok(report.checks.some((check) => check.name === 'app_auth' && check.status === 'warning'));
   assert.ok(report.checks.some((check) => check.name === 'telegram_sources' && check.status === 'warning'));
   assert.ok(report.checks.some((check) => check.name === 'telegram_credentials' && check.status === 'warning'));
+  assert.ok(report.nextSteps.some((step) => step.id === 'set_app_auth'));
+  assert.ok(report.nextSteps.some((step) => step.id === 'set_telegram_credentials'));
+  assert.ok(report.nextSteps.some((step) => step.id === 'login_telegram'));
+  assert.ok(report.nextSteps.some((step) => step.id === 'select_telegram_sources'));
+  assert.equal(JSON.stringify(report.nextSteps).includes('secret-hash'), false);
 });
 
 test('createReadinessReport can verify Telegram auth with injected client', async () => {
@@ -62,6 +67,13 @@ test('createReadinessReport can verify Telegram auth with injected client', asyn
   assert.equal(report.status, 'ok');
   assert.equal(disconnected, true);
   assert.ok(report.checks.some((check) => check.name === 'telegram_auth' && check.status === 'ok'));
+  assert.deepEqual(report.nextSteps, [
+    {
+      id: 'deploy_or_connect',
+      reason: 'Core readiness checks are passing.',
+      command: 'Deploy the service and connect ChatGPT to the MCP endpoint.'
+    }
+  ]);
 });
 
 test('createReadinessReport validates optional Telegram slash bot config', async () => {
@@ -91,4 +103,5 @@ test('createReadinessReport validates optional Telegram slash bot config', async
   });
 
   assert.ok(openBot.checks.some((check) => check.name === 'telegram_bot' && check.status === 'warning'));
+  assert.ok(openBot.nextSteps.some((step) => step.id === 'restrict_telegram_bot'));
 });

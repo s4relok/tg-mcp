@@ -115,7 +115,7 @@ npm run cli -- doctor
 npm run cli -- doctor --telegram
 ```
 
-`doctor --telegram` performs a non-interactive authorization check with the existing session file.
+`doctor` returns machine-readable checks plus `nextSteps` with the next safe commands for the current setup state. `doctor --telegram` also performs a non-interactive authorization check with the existing session file.
 
 ## Background sync
 

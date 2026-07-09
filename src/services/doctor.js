@@ -44,6 +44,96 @@ function summarize(checks) {
   };
 }
 
+function findCheck(checks, name) {
+  return checks.find((check) => check.name === name);
+}
+
+function addUniqueStep(steps, step) {
+  if (!steps.some((item) => item.id === step.id)) {
+    steps.push(step);
+  }
+}
+
+function createNextSteps(checks) {
+  const steps = [];
+  const mongodb = findCheck(checks, 'mongodb');
+  const appAuth = findCheck(checks, 'app_auth');
+  const telegramCredentials = findCheck(checks, 'telegram_credentials');
+  const telegramSession = findCheck(checks, 'telegram_session');
+  const telegramAuth = findCheck(checks, 'telegram_auth');
+  const telegramSources = findCheck(checks, 'telegram_sources');
+  const telegramBot = findCheck(checks, 'telegram_bot');
+
+  if (mongodb?.status === 'error') {
+    addUniqueStep(steps, {
+      id: 'fix_mongodb',
+      reason: 'MongoDB is not reachable.',
+      command: 'Check MONGO_URL/MONGO_DB and make sure MongoDB is running.'
+    });
+  }
+
+  if (appAuth?.status === 'warning') {
+    addUniqueStep(steps, {
+      id: 'set_app_auth',
+      reason: 'MCP/REST should not be exposed without an auth token.',
+      command: 'npm run cli -- setup-env'
+    });
+  }
+
+  if (telegramCredentials?.status === 'warning') {
+    addUniqueStep(steps, {
+      id: 'set_telegram_credentials',
+      reason: 'Telegram API credentials are required before login and sync.',
+      command: 'export TELEGRAM_API_ID=<api_id>; export TELEGRAM_API_HASH=<api_hash>; npm run cli -- setup-env --from-env TELEGRAM_API_ID --from-env TELEGRAM_API_HASH'
+    });
+  }
+
+  if (telegramSession?.status !== 'ok' || telegramAuth?.status === 'error') {
+    addUniqueStep(steps, {
+      id: 'login_telegram',
+      reason: 'A valid Telegram user session is required before reading selected chats.',
+      command: 'npm run cli -- login && npm run cli -- doctor --telegram'
+    });
+  }
+
+  if (telegramSources?.status === 'warning') {
+    const total = telegramSources.details?.total || 0;
+    addUniqueStep(steps, {
+      id: 'select_telegram_sources',
+      reason: total
+        ? 'Telegram sources exist in MongoDB but none are enabled.'
+        : 'Telegram sources have not been imported into MongoDB yet.',
+      command: total
+        ? 'npm run cli -- find-sources <query>; npm run cli -- select-source "<title or id>" --tag work; npm run cli -- sync'
+        : 'npm run cli -- refresh-sources; npm run cli -- find-sources <query>; npm run cli -- select-source "<title or id>" --tag work; npm run cli -- sync'
+    });
+  }
+
+  if (telegramBot?.status === 'error') {
+    addUniqueStep(steps, {
+      id: 'fix_telegram_bot',
+      reason: 'The optional Telegram slash bot is enabled but missing required configuration.',
+      command: 'Set TELEGRAM_BOT_TOKEN or set TELEGRAM_BOT_ENABLED=false, then restart the service.'
+    });
+  } else if (telegramBot?.status === 'warning') {
+    addUniqueStep(steps, {
+      id: 'restrict_telegram_bot',
+      reason: 'The optional Telegram slash bot is enabled for every chat.',
+      command: 'Set TELEGRAM_BOT_ALLOWED_CHAT_IDS=<chat_id>[,<chat_id>] and restart the service.'
+    });
+  }
+
+  if (!steps.length) {
+    steps.push({
+      id: 'deploy_or_connect',
+      reason: 'Core readiness checks are passing.',
+      command: 'Deploy the service and connect ChatGPT to the MCP endpoint.'
+    });
+  }
+
+  return steps;
+}
+
 function telegramBotStatus(config) {
   if (!config.telegramBotEnabled) {
     return ok('telegram_bot', 'Telegram slash bot is disabled.');
@@ -133,6 +223,7 @@ export async function createReadinessReport({
     status: summary.status,
     generatedAt: new Date().toISOString(),
     summary,
+    nextSteps: createNextSteps(checks),
     checks
   };
 }
