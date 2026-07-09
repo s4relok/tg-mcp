@@ -22,7 +22,7 @@ async function writeSession(sessionFile, value) {
   await fs.writeFile(sessionFile, value, { mode: 0o600 });
 }
 
-function entityId(entity) {
+export function telegramEntityId(entity) {
   const value = entity?.id;
   if (value && typeof value.toString === 'function') {
     return value.toString();
@@ -30,8 +30,8 @@ function entityId(entity) {
   return String(value);
 }
 
-function entityTitle(entity) {
-  return entity?.title || [entity?.firstName, entity?.lastName].filter(Boolean).join(' ') || entity?.username || entityId(entity);
+export function telegramEntityTitle(entity) {
+  return entity?.title || [entity?.firstName, entity?.lastName].filter(Boolean).join(' ') || entity?.username || telegramEntityId(entity);
 }
 
 function messageLink(source, messageId) {
@@ -39,6 +39,51 @@ function messageLink(source, messageId) {
     return `https://t.me/${source.username}/${messageId}`;
   }
   return null;
+}
+
+function secondsToDate(value) {
+  if (!value) {
+    return new Date();
+  }
+  if (value instanceof Date) {
+    return value;
+  }
+  return new Date(value * 1000);
+}
+
+export function normalizeTelegramSource(dialog, { allowedSourceIds = [] } = {}) {
+  const entity = dialog.entity || dialog;
+  const sourceId = telegramEntityId(entity);
+  const allowed = new Set(allowedSourceIds.map(String));
+
+  return {
+    sourceId,
+    title: telegramEntityTitle(entity),
+    username: entity?.username || null,
+    type: entity?.className || 'unknown',
+    enabled: allowed.size > 0 ? allowed.has(sourceId) : false,
+    tags: []
+  };
+}
+
+export function normalizeTelegramMessage(message, source) {
+  return {
+    sourceId: source.sourceId,
+    sourceTitle: source.title,
+    messageId: message.id,
+    date: secondsToDate(message.date),
+    senderId: message.senderId ? message.senderId.toString() : null,
+    senderName: null,
+    text: message.message || '',
+    replyToMessageId: message.replyTo?.replyToMsgId || null,
+    views: message.views || null,
+    link: messageLink(source, message.id),
+    entities: message.entities || [],
+    raw: {
+      groupedId: message.groupedId?.toString?.() || null,
+      post: Boolean(message.post)
+    }
+  };
 }
 
 export async function createTelegramClient(config, prompts) {
@@ -66,34 +111,20 @@ export async function createTelegramClient(config, prompts) {
   return client;
 }
 
-export async function listTelegramSources({ client }) {
+export async function listTelegramSources({ client, allowedSourceIds = [] }) {
   const dialogs = await client.getDialogs({});
   return dialogs
-    .map((dialog) => {
-      const entity = dialog.entity;
-      return {
-        sourceId: entityId(entity),
-        title: entityTitle(entity),
-        username: entity?.username || null,
-        type: entity?.className || 'unknown',
-        enabled: false,
-        tags: []
-      };
-    })
+    .map((dialog) => normalizeTelegramSource(dialog, { allowedSourceIds }))
     .filter((source) => source.sourceId && source.title);
 }
 
-export async function syncTelegramMessages({ client, store, config }) {
-  const allowed = new Set(config.allowedSourceIds);
+export async function syncTelegramMessages({ client, store, config, sourceIds, limit, minDate } = {}) {
+  const allowed = new Set((sourceIds?.length ? sourceIds : config.allowedSourceIds).map(String));
   if (!allowed.size) {
     throw new Error('ALLOWED_SOURCE_IDS must contain at least one Telegram source id before syncing');
   }
 
-  const sources = (await listTelegramSources({ client }))
-    .map((source) => ({
-      ...source,
-      enabled: allowed.has(source.sourceId)
-    }));
+  const sources = await listTelegramSources({ client, allowedSourceIds: [...allowed] });
 
   for (const source of sources) {
     await store.upsertSource(source);
@@ -101,39 +132,36 @@ export async function syncTelegramMessages({ client, store, config }) {
 
   const enabledSources = sources.filter((source) => source.enabled);
   let messageCount = 0;
+  const perSource = [];
 
   for (const source of enabledSources) {
     const messages = [];
-    for await (const message of client.iterMessages(source.sourceId, { limit: config.telegramSyncLimit })) {
+    const iterOptions = { limit: limit || config.telegramSyncLimit };
+    for await (const message of client.iterMessages(source.sourceId, iterOptions)) {
       if (!message.message) {
         continue;
       }
 
-      messages.push({
-        sourceId: source.sourceId,
-        sourceTitle: source.title,
-        messageId: message.id,
-        date: message.date ? new Date(message.date * 1000) : new Date(),
-        senderId: message.senderId ? message.senderId.toString() : null,
-        senderName: null,
-        text: message.message,
-        replyToMessageId: message.replyTo?.replyToMsgId || null,
-        views: message.views || null,
-        link: messageLink(source, message.id),
-        entities: message.entities || [],
-        raw: {
-          groupedId: message.groupedId?.toString?.() || null,
-          post: Boolean(message.post)
-        }
-      });
+      const normalized = normalizeTelegramMessage(message, source);
+      if (minDate && normalized.date < minDate) {
+        continue;
+      }
+
+      messages.push(normalized);
     }
 
     await store.upsertMessages(messages);
     messageCount += messages.length;
+    perSource.push({
+      sourceId: source.sourceId,
+      title: source.title,
+      messageCount: messages.length
+    });
   }
 
   return {
     sourceCount: enabledSources.length,
-    messageCount
+    messageCount,
+    sources: perSource
   };
 }

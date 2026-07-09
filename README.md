@@ -54,6 +54,14 @@ Then put selected source ids into `ALLOWED_SOURCE_IDS` and sync:
 npm run cli -- sync
 ```
 
+Useful variants:
+
+```bash
+npm run cli -- db-sources --include-disabled
+npm run cli -- sync --source-id <id> --limit 100
+npm run cli -- backfill --days 7 --limit 1000
+```
+
 The first run is interactive and writes the Telegram session file.
 
 ## VPS quick deploy
