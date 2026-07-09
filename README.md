@@ -36,7 +36,7 @@ REST/OpenAPI fallback:
 
 ```bash
 curl http://127.0.0.1:3010/tg-mcp/openapi.json
-curl http://127.0.0.1:3010/tg-mcp/api/digest/daily
+curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?timelineLimit=80"
 curl "http://127.0.0.1:3010/tg-mcp/api/search?query=release"
 ```
 

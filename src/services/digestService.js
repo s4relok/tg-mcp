@@ -5,6 +5,8 @@ const URL_PATTERN = /https?:\/\/[^\s)]+/gi;
 const IMPORTANT_PATTERN = /(important|urgent|block|blocked|decision|decided|todo|fix|bug|release|deploy|deadline|важн|срочн|решил|решили|договорил|надо|нужно|сделать|проверь|проверить|блок|баг|релиз)/i;
 const ACTION_PATTERN = /(todo|action|follow up|fix|check|please|pls|надо|нужно|сделать|проверь|проверить|посмотри|ответь|пофикс|почини)/i;
 const DECISION_PATTERN = /(decision|decided|agreed|resolved|итог|решили|решил|договорились|согласовали|финально)/i;
+const DEFAULT_TIMELINE_LIMIT = 80;
+const MAX_TIMELINE_LIMIT = 200;
 
 function toIso(value) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
@@ -27,6 +29,14 @@ function messagePreview(message, sourceById) {
   const output = publicMessage(message, sourceById);
   if (output.text.length > 500) {
     output.text = `${output.text.slice(0, 497)}...`;
+  }
+  return output;
+}
+
+function messageExcerpt(message, sourceById) {
+  const output = publicMessage(message, sourceById);
+  if (output.text.length > 240) {
+    output.text = `${output.text.slice(0, 237)}...`;
   }
   return output;
 }
@@ -59,8 +69,51 @@ function uniqueByMessage(items) {
   });
 }
 
-function summarize(messages, sourceById) {
+function clampLimit(value, fallback, max) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return Math.min(parsed, max);
+}
+
+function buildTimeline(messages, sourceById, limit) {
+  return messages.slice(0, limit).map((message) => messageExcerpt(message, sourceById));
+}
+
+function buildSourceDigests(messages, sourceById) {
+  const bySource = new Map();
+  for (const message of messages) {
+    const bucket = bySource.get(message.sourceId) || [];
+    bucket.push(message);
+    bySource.set(message.sourceId, bucket);
+  }
+
+  return [...bySource.entries()].map(([sourceId, sourceMessages]) => {
+    const source = sourceById.get(sourceId);
+    const important = uniqueByMessage(
+      sourceMessages.filter((message) => (
+        IMPORTANT_PATTERN.test(message.text || '') ||
+        ACTION_PATTERN.test(message.text || '') ||
+        DECISION_PATTERN.test(message.text || '') ||
+        (message.text || '').includes('?')
+      ))
+    ).slice(0, 8);
+
+    return {
+      sourceId,
+      title: source?.title || sourceId,
+      messageCount: sourceMessages.length,
+      firstMessages: sourceMessages.slice(0, 3).map((message) => messageExcerpt(message, sourceById)),
+      importantMessages: important.map((message) => messageExcerpt(message, sourceById)),
+      lastMessages: sourceMessages.slice(-3).map((message) => messageExcerpt(message, sourceById))
+    };
+  });
+}
+
+function summarize(messages, sourceById, { includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
   const ascMessages = [...messages].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const clampedTimelineLimit = clampLimit(timelineLimit, DEFAULT_TIMELINE_LIMIT, MAX_TIMELINE_LIMIT);
   const highlights = uniqueByMessage(
     ascMessages.filter((message) => IMPORTANT_PATTERN.test(message.text || '') || (message.text || '').includes('?'))
   ).slice(0, 15);
@@ -94,7 +147,10 @@ function summarize(messages, sourceById) {
     questions: questions.map((message) => messagePreview(message, sourceById)),
     decisions: decisions.map((message) => messagePreview(message, sourceById)),
     actionItems: actionItems.map((message) => messagePreview(message, sourceById)),
-    links
+    links,
+    sourceDigests: buildSourceDigests(ascMessages, sourceById),
+    timeline: includeTimeline ? buildTimeline(ascMessages, sourceById, clampedTimelineLimit) : [],
+    timelineTruncated: includeTimeline && ascMessages.length > clampedTimelineLimit
   };
 }
 
@@ -121,7 +177,7 @@ export class TelegramDigestService {
     };
   }
 
-  async getDailyDigest({ date, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [] } = {}) {
+  async getDailyDigest({ date, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
     const range = dayRange(date, timezone);
     return this.getPeriodSummary({
       fromDate: range.from,
@@ -129,11 +185,13 @@ export class TelegramDigestService {
       label: range.date,
       timezone,
       sourceIds,
-      tags
+      tags,
+      includeTimeline,
+      timelineLimit
     });
   }
 
-  async getPeriodSummary({ from, to, fromDate, toDate, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [] } = {}) {
+  async getPeriodSummary({ from, to, fromDate, toDate, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
     const range = fromDate && toDate
       ? { from: fromDate, to: toDate }
       : normalizePeriod({ from, to, timezone });
@@ -153,7 +211,7 @@ export class TelegramDigestService {
       periodEnd: toIso(range.to),
       timezone,
       sourceIds: sources.map((source) => source.sourceId),
-      ...summarize(messages, sourceById),
+      ...summarize(messages, sourceById, { includeTimeline, timelineLimit }),
       generatedAt: new Date().toISOString()
     };
 

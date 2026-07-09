@@ -71,6 +71,8 @@ export function createOpenApiDocument(config) {
           parameters: [
             parameter('date', 'Date in YYYY-MM-DD format. Defaults to today.'),
             parameter('timezone', 'IANA timezone. Defaults to Europe/Chisinau.'),
+            parameter('includeTimeline', 'Include compact chronological message excerpts.', { type: 'boolean' }),
+            parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 }),
             ...sourceFilterParameters
           ],
           responses: {
@@ -86,6 +88,8 @@ export function createOpenApiDocument(config) {
             { ...parameter('from', 'Start date in YYYY-MM-DD format, inclusive.'), required: true },
             { ...parameter('to', 'End date in YYYY-MM-DD format, exclusive.'), required: true },
             parameter('timezone', 'IANA timezone. Defaults to Europe/Chisinau.'),
+            parameter('includeTimeline', 'Include compact chronological message excerpts.', { type: 'boolean' }),
+            parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 }),
             ...sourceFilterParameters
           ],
           responses: {

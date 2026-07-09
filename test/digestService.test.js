@@ -58,6 +58,34 @@ test('getDailyDigest summarizes selected Telegram messages', async () => {
   assert.equal(result.questions.length, 1);
   assert.equal(result.actionItems.length, 1);
   assert.equal(result.links[0].url, 'https://example.com/spec');
+  assert.equal(result.sourceDigests.length, 1);
+  assert.equal(result.sourceDigests[0].sourceId, 'chat-1');
+  assert.equal(result.timeline.length, 2);
+  assert.equal(result.timelineTruncated, false);
+});
+
+test('getDailyDigest supports compact timeline limits', async () => {
+  const service = createFixtureService();
+  const result = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC',
+    timelineLimit: 1
+  });
+
+  assert.equal(result.timeline.length, 1);
+  assert.equal(result.timelineTruncated, true);
+});
+
+test('getDailyDigest can omit timeline excerpts', async () => {
+  const service = createFixtureService();
+  const result = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC',
+    includeTimeline: false
+  });
+
+  assert.deepEqual(result.timeline, []);
+  assert.equal(result.timelineTruncated, false);
 });
 
 test('searchMessages searches only enabled sources', async () => {

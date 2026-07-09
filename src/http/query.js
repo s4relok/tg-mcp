@@ -47,6 +47,8 @@ export function parseDailyDigestQuery(query) {
   return {
     date: query.date ? String(query.date) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
+    includeTimeline: toBoolean(query.includeTimeline, true),
+    timelineLimit: toInteger(query.timelineLimit, undefined),
     ...sourceFilters(query)
   };
 }
@@ -56,6 +58,8 @@ export function parsePeriodSummaryQuery(query) {
     from: query.from ? String(query.from) : undefined,
     to: query.to ? String(query.to) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
+    includeTimeline: toBoolean(query.includeTimeline, true),
+    timelineLimit: toInteger(query.timelineLimit, undefined),
     ...sourceFilters(query)
   };
 }

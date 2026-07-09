@@ -18,6 +18,11 @@ const sourceFilterSchema = {
   tags: z.array(z.string()).optional().describe('Optional source tags to include.')
 };
 
+const digestExcerptSchema = {
+  includeTimeline: z.boolean().optional().describe('Include compact chronological message excerpts. Defaults to true.'),
+  timelineLimit: z.number().int().min(1).max(200).optional().describe('Maximum timeline excerpt count. Defaults to 80.')
+};
+
 export function createTelegramMcpServer({ digestService, config }) {
   const server = new McpServer(
     {
@@ -56,6 +61,7 @@ export function createTelegramMcpServer({ digestService, config }) {
       inputSchema: {
         date: z.string().optional().describe('Date in YYYY-MM-DD format. Defaults to today in the provided timezone.'),
         timezone: z.string().optional().describe('IANA timezone. Defaults to Europe/Chisinau.'),
+        ...digestExcerptSchema,
         ...sourceFilterSchema
       },
       annotations: {
@@ -74,6 +80,7 @@ export function createTelegramMcpServer({ digestService, config }) {
         from: z.string().describe('Start date in YYYY-MM-DD format, inclusive.'),
         to: z.string().describe('End date in YYYY-MM-DD format, exclusive.'),
         timezone: z.string().optional().describe('IANA timezone. Defaults to Europe/Chisinau.'),
+        ...digestExcerptSchema,
         ...sourceFilterSchema
       },
       annotations: {
