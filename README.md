@@ -41,6 +41,7 @@ curl http://127.0.0.1:3010/tg-mcp/openapi.json
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?timelineLimit=80"
 curl "http://127.0.0.1:3010/tg-mcp/api/sources/<sourceId>/summary?date=2026-07-09"
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?sourceQuery=project"
+curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?refresh=true"
 curl "http://127.0.0.1:3010/tg-mcp/api/search?query=release"
 ```
 
@@ -107,6 +108,12 @@ TELEGRAM_SYNC_ON_START=true
 If credentials, session, or selected sources are missing, the worker logs a warning and waits for the next interval. It never prompts from the systemd service.
 
 Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports.
+
+## Digest cache
+
+Daily, period, and source summaries are cached in `tg_digests`. The cache key includes the period, timezone, source filters, timeline options, and selected source sync state, so a later Telegram sync naturally invalidates stale summaries.
+
+Use `refresh=true` in REST calls, or `refresh: true` in MCP tool arguments, to force recomputation from stored messages.
 
 ## Optional Telegram slash bot
 

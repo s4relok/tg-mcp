@@ -113,6 +113,12 @@ test('REST fallback endpoints expose digest service data', async () => {
     assert.equal(digest.timeline.length, 1);
     assert.equal(digest.timelineTruncated, true);
 
+    const cachedDigest = await (await fetch(`${baseUrl}/digest/daily?date=2026-07-09&timezone=UTC&timelineLimit=1&sourceQuery=project`)).json();
+    assert.equal(cachedDigest.cached, true);
+
+    const refreshedDigest = await (await fetch(`${baseUrl}/digest/daily?date=2026-07-09&timezone=UTC&timelineLimit=1&sourceQuery=project&refresh=true`)).json();
+    assert.equal(refreshedDigest.cached, false);
+
     const sourceSummary = await (await fetch(`${baseUrl}/sources/chat-1/summary?date=2026-07-09&timezone=UTC`)).json();
     assert.equal(sourceSummary.found, true);
     assert.equal(sourceSummary.source.sourceId, 'chat-1');

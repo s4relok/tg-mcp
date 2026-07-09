@@ -21,7 +21,8 @@ const sourceFilterSchema = {
 
 const digestExcerptSchema = {
   includeTimeline: z.boolean().optional().describe('Include compact chronological message excerpts. Defaults to true.'),
-  timelineLimit: z.number().int().min(1).max(200).optional().describe('Maximum timeline excerpt count. Defaults to 80.')
+  timelineLimit: z.number().int().min(1).max(200).optional().describe('Maximum timeline excerpt count. Defaults to 80.'),
+  refresh: z.boolean().optional().describe('Bypass the digest cache and recompute from stored Telegram messages.')
 };
 
 export function createTelegramMcpServer({ digestService, config }) {

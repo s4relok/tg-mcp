@@ -38,6 +38,31 @@ function createFixtureService() {
   return createTelegramDigestService(store);
 }
 
+function createFixtureStore() {
+  return new MemoryTelegramStore({
+    sources: [
+      { sourceId: 'chat-1', title: 'Project Chat', type: 'Channel', enabled: true, tags: ['work'] },
+      { sourceId: 'chat-2', title: 'Muted Chat', type: 'Chat', enabled: false, tags: ['muted'] }
+    ],
+    messages: [
+      {
+        sourceId: 'chat-1',
+        messageId: 1,
+        date: '2026-07-09T06:00:00.000Z',
+        senderName: 'Andrei',
+        text: 'Decision: ship the digest MCP today. https://example.com/spec'
+      },
+      {
+        sourceId: 'chat-1',
+        messageId: 2,
+        date: '2026-07-09T07:00:00.000Z',
+        senderName: 'Mira',
+        text: 'Need to check Telegram sync before deploy?'
+      }
+    ]
+  });
+}
+
 test('listSources returns enabled sources by default', async () => {
   const service = createFixtureService();
   const result = await service.listSources();
@@ -106,6 +131,67 @@ test('getDailyDigest can filter by source query', async () => {
 
   assert.equal(result.messageCount, 2);
   assert.deepEqual(result.sourceIds, ['chat-1']);
+});
+
+test('getDailyDigest reuses cached digest until refresh is requested', async () => {
+  const store = createFixtureStore();
+  const service = createTelegramDigestService(store);
+  const originalFindMessages = store.findMessages.bind(store);
+  let findMessagesCount = 0;
+  store.findMessages = async (args) => {
+    findMessagesCount += 1;
+    return originalFindMessages(args);
+  };
+
+  const first = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC'
+  });
+  const second = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC'
+  });
+  const refreshed = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC',
+    refresh: true
+  });
+
+  assert.equal(first.cached, false);
+  assert.equal(second.cached, true);
+  assert.equal(refreshed.cached, false);
+  assert.equal(first.cacheKey, second.cacheKey);
+  assert.equal(first.cacheKey, refreshed.cacheKey);
+  assert.equal(findMessagesCount, 2);
+  assert.equal(store.savedDigests.length, 1);
+});
+
+test('getDailyDigest invalidates cache when source sync state changes', async () => {
+  const store = createFixtureStore();
+  const service = createTelegramDigestService(store);
+  const originalFindMessages = store.findMessages.bind(store);
+  let findMessagesCount = 0;
+  store.findMessages = async (args) => {
+    findMessagesCount += 1;
+    return originalFindMessages(args);
+  };
+
+  const first = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC'
+  });
+  await store.markSourceSynced('chat-1', {
+    lastSyncedMessageId: 2,
+    messageCount: 1
+  });
+  const second = await service.getDailyDigest({
+    date: '2026-07-09',
+    timezone: 'UTC'
+  });
+
+  assert.equal(second.cached, false);
+  assert.notEqual(first.cacheKey, second.cacheKey);
+  assert.equal(findMessagesCount, 2);
 });
 
 test('getSourceSummary summarizes a selected source', async () => {

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { dayRange, normalizePeriod } from './dateRange.js';
 
 const DEFAULT_TIMEZONE = 'Europe/Chisinau';
@@ -10,6 +12,60 @@ const MAX_TIMELINE_LIMIT = 200;
 
 function toIso(value) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashObject(value) {
+  return createHash('sha256').update(stableJson(value)).digest('hex');
+}
+
+function sourceSyncSignature(sources) {
+  return sources
+    .map((source) => ({
+      sourceId: source.sourceId,
+      title: source.title || '',
+      username: source.username || '',
+      tags: [...(source.tags || [])].sort(),
+      lastSyncedMessageId: source.lastSyncedMessageId || null,
+      lastSyncedAt: source.lastSyncedAt ? toIso(source.lastSyncedAt) : null,
+      updatedAt: source.updatedAt ? toIso(source.updatedAt) : null
+    }))
+    .sort((a, b) => a.sourceId.localeCompare(b.sourceId));
+}
+
+function createDigestCacheKey({
+  range,
+  timezone,
+  sourceIds,
+  tags,
+  sourceQuery,
+  includeTimeline,
+  timelineLimit,
+  sources
+}) {
+  return hashObject({
+    periodStart: toIso(range.from),
+    periodEnd: toIso(range.to),
+    timezone,
+    requestedSourceIds: [...sourceIds].sort(),
+    requestedTags: [...tags].sort(),
+    sourceQuery,
+    includeTimeline,
+    timelineLimit,
+    sources: sourceSyncSignature(sources)
+  });
 }
 
 function publicMessage(message, sourceById = new Map()) {
@@ -177,7 +233,7 @@ export class TelegramDigestService {
     };
   }
 
-  async getDailyDigest({ date, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
+  async getDailyDigest({ date, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT, refresh = false } = {}) {
     const range = dayRange(date, timezone);
     return this.getPeriodSummary({
       fromDate: range.from,
@@ -188,16 +244,39 @@ export class TelegramDigestService {
       tags,
       sourceQuery,
       includeTimeline,
-      timelineLimit
+      timelineLimit,
+      refresh
     });
   }
 
-  async getPeriodSummary({ from, to, fromDate, toDate, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
+  async getPeriodSummary({ from, to, fromDate, toDate, timezone = DEFAULT_TIMEZONE, sourceIds = [], tags = [], sourceQuery = '', includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT, refresh = false } = {}) {
     const range = fromDate && toDate
       ? { from: fromDate, to: toDate }
       : normalizePeriod({ from, to, timezone });
     const sources = await this.store.listSources({ sourceIds, tags, sourceQuery });
     const sourceById = new Map(sources.map((source) => [source.sourceId, source]));
+    const normalizedTimelineLimit = clampLimit(timelineLimit, DEFAULT_TIMELINE_LIMIT, MAX_TIMELINE_LIMIT);
+    const cacheKey = createDigestCacheKey({
+      range,
+      timezone,
+      sourceIds,
+      tags,
+      sourceQuery,
+      includeTimeline,
+      timelineLimit: normalizedTimelineLimit,
+      sources
+    });
+
+    if (!refresh && this.store.findDigest) {
+      const cachedDigest = await this.store.findDigest(cacheKey);
+      if (cachedDigest) {
+        return {
+          ...cachedDigest,
+          cached: true
+        };
+      }
+    }
+
     const messages = await this.store.findMessages({
       from: range.from,
       to: range.to,
@@ -213,7 +292,9 @@ export class TelegramDigestService {
       periodEnd: toIso(range.to),
       timezone,
       sourceIds: sources.map((source) => source.sourceId),
-      ...summarize(messages, sourceById, { includeTimeline, timelineLimit }),
+      cacheKey,
+      cached: false,
+      ...summarize(messages, sourceById, { includeTimeline, timelineLimit: normalizedTimelineLimit }),
       generatedAt: new Date().toISOString()
     };
 
@@ -221,7 +302,7 @@ export class TelegramDigestService {
     return digest;
   }
 
-  async getSourceSummary({ sourceId, date, from, to, timezone = DEFAULT_TIMEZONE, includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT } = {}) {
+  async getSourceSummary({ sourceId, date, from, to, timezone = DEFAULT_TIMEZONE, includeTimeline = true, timelineLimit = DEFAULT_TIMELINE_LIMIT, refresh = false } = {}) {
     if (!sourceId) {
       throw new Error('sourceId is required');
     }
@@ -255,14 +336,16 @@ export class TelegramDigestService {
         timezone,
         sourceIds: [sourceId],
         includeTimeline,
-        timelineLimit
+        timelineLimit,
+        refresh
       })
       : await this.getDailyDigest({
         date,
         timezone,
         sourceIds: [sourceId],
         includeTimeline,
-        timelineLimit
+        timelineLimit,
+        refresh
       });
 
     return {

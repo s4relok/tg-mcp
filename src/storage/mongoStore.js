@@ -22,6 +22,13 @@ export class MongoTelegramStore {
       this.messages.createIndex({ sourceId: 1, date: -1 }),
       this.messages.createIndex({ date: -1 }),
       this.messages.createIndex({ text: 'text', senderName: 'text', link: 'text' }),
+      this.digests.createIndex(
+        { cacheKey: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { cacheKey: { $type: 'string' } }
+        }
+      ),
       this.digests.createIndex({ periodStart: 1, periodEnd: 1, sourceIds: 1 }),
       this.syncState.createIndex({ key: 1 }, { unique: true })
     ]);
@@ -262,13 +269,19 @@ export class MongoTelegramStore {
     };
   }
 
+  async findDigest(cacheKey) {
+    if (!cacheKey) {
+      return null;
+    }
+
+    return this.digests.findOne({ cacheKey }, { projection: { _id: 0 } });
+  }
+
   async saveDigest(digest) {
     const now = new Date();
     await this.digests.updateOne(
       {
-        periodStart: digest.periodStart,
-        periodEnd: digest.periodEnd,
-        sourceIds: digest.sourceIds || []
+        cacheKey: digest.cacheKey
       },
       {
         $set: {

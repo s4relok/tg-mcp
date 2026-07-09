@@ -320,7 +320,7 @@ Acceptance:
 
 ### Phase 5: polish
 
-- Add digest cache.
+- Add digest cache with sync-state invalidation and manual `refresh`.
 - Add `get_action_items`.
 - Add basic admin CLI commands:
   - `sync`

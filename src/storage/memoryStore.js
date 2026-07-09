@@ -142,7 +142,21 @@ export class MemoryTelegramStore {
     };
   }
 
+  async findDigest(cacheKey) {
+    if (!cacheKey) {
+      return null;
+    }
+
+    const digest = this.savedDigests.find((item) => item.cacheKey === cacheKey);
+    return digest ? { ...digest } : null;
+  }
+
   async saveDigest(digest) {
-    this.savedDigests.push(digest);
+    const index = this.savedDigests.findIndex((item) => item.cacheKey === digest.cacheKey);
+    if (index >= 0) {
+      this.savedDigests[index] = { ...digest };
+    } else {
+      this.savedDigests.push({ ...digest });
+    }
   }
 }

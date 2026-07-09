@@ -50,6 +50,7 @@ export function parseDailyDigestQuery(query) {
     timezone: query.timezone ? String(query.timezone) : undefined,
     includeTimeline: toBoolean(query.includeTimeline, true),
     timelineLimit: toInteger(query.timelineLimit, undefined),
+    refresh: toBoolean(query.refresh),
     ...sourceFilters(query)
   };
 }
@@ -61,6 +62,7 @@ export function parsePeriodSummaryQuery(query) {
     timezone: query.timezone ? String(query.timezone) : undefined,
     includeTimeline: toBoolean(query.includeTimeline, true),
     timelineLimit: toInteger(query.timelineLimit, undefined),
+    refresh: toBoolean(query.refresh),
     ...sourceFilters(query)
   };
 }
@@ -73,7 +75,8 @@ export function parseSourceSummaryQuery(query, params = {}) {
     to: query.to ? String(query.to) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
     includeTimeline: toBoolean(query.includeTimeline, true),
-    timelineLimit: toInteger(query.timelineLimit, undefined)
+    timelineLimit: toInteger(query.timelineLimit, undefined),
+    refresh: toBoolean(query.refresh)
   };
 }
 

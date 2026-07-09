@@ -74,6 +74,7 @@ export function createOpenApiDocument(config) {
             parameter('timezone', 'IANA timezone. Defaults to Europe/Chisinau.'),
             parameter('includeTimeline', 'Include compact chronological message excerpts.', { type: 'boolean' }),
             parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 }),
+            parameter('refresh', 'Bypass the digest cache and recompute from stored Telegram messages.', { type: 'boolean' }),
             ...sourceFilterParameters
           ],
           responses: {
@@ -91,6 +92,7 @@ export function createOpenApiDocument(config) {
             parameter('timezone', 'IANA timezone. Defaults to Europe/Chisinau.'),
             parameter('includeTimeline', 'Include compact chronological message excerpts.', { type: 'boolean' }),
             parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 }),
+            parameter('refresh', 'Bypass the digest cache and recompute from stored Telegram messages.', { type: 'boolean' }),
             ...sourceFilterParameters
           ],
           responses: {
@@ -115,7 +117,8 @@ export function createOpenApiDocument(config) {
             parameter('to', 'End date in YYYY-MM-DD format, exclusive.'),
             parameter('timezone', 'IANA timezone. Defaults to Europe/Chisinau.'),
             parameter('includeTimeline', 'Include compact chronological message excerpts.', { type: 'boolean' }),
-            parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 })
+            parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 }),
+            parameter('refresh', 'Bypass the digest cache and recompute from stored Telegram messages.', { type: 'boolean' })
           ],
           responses: {
             200: jsonResponse('Source summary.')
