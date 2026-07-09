@@ -1,0 +1,34 @@
+{
+  "name": "tg-mcp",
+  "version": "1.0.0",
+  "description": "Read-only Telegram digest MCP server for selected chats and channels.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "cli": "node src/cli.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/s4relok/tg-mcp.git"
+  },
+  "keywords": [],
+  "author": "Andrei Kolesin",
+  "license": "ISC",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bugs": {
+    "url": "https://github.com/s4relok/tg-mcp/issues"
+  },
+  "homepage": "https://github.com/s4relok/tg-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mongodb": "^7.5.0",
+    "telegram": "^2.26.22",
+    "zod": "^4.4.3"
+  }
+}

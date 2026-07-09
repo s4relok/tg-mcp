@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+coverage/
+.nyc_output/
+*.log
+*.session
+*.session-journal
+data/
+logs/
+sessions/

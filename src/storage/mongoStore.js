@@ -1,0 +1,206 @@
+import { MongoClient } from 'mongodb';
+
+export class MongoTelegramStore {
+  constructor(db, client) {
+    this.db = db;
+    this.client = client;
+    this.sources = db.collection('tg_sources');
+    this.messages = db.collection('tg_messages');
+    this.digests = db.collection('tg_digests');
+    this.syncState = db.collection('sync_state');
+  }
+
+  async ensureIndexes() {
+    await Promise.all([
+      this.sources.createIndex({ sourceId: 1 }, { unique: true }),
+      this.sources.createIndex({ enabled: 1, tags: 1 }),
+      this.messages.createIndex({ sourceId: 1, messageId: 1 }, { unique: true }),
+      this.messages.createIndex({ sourceId: 1, date: -1 }),
+      this.messages.createIndex({ date: -1 }),
+      this.messages.createIndex({ text: 'text', senderName: 'text', link: 'text' }),
+      this.digests.createIndex({ periodStart: 1, periodEnd: 1, sourceIds: 1 }),
+      this.syncState.createIndex({ key: 1 }, { unique: true })
+    ]);
+  }
+
+  async health() {
+    await this.db.command({ ping: 1 });
+    return { ok: true, driver: 'mongodb', database: this.db.databaseName };
+  }
+
+  async close() {
+    await this.client.close();
+  }
+
+  async upsertSource(source) {
+    const now = new Date();
+    await this.sources.updateOne(
+      { sourceId: source.sourceId },
+      {
+        $set: {
+          ...source,
+          updatedAt: now
+        },
+        $setOnInsert: {
+          createdAt: now
+        }
+      },
+      { upsert: true }
+    );
+  }
+
+  async upsertMessages(messages) {
+    if (!messages.length) {
+      return { insertedOrUpdated: 0 };
+    }
+
+    const now = new Date();
+    const operations = messages.map((message) => ({
+      updateOne: {
+        filter: {
+          sourceId: message.sourceId,
+          messageId: message.messageId
+        },
+        update: {
+          $set: {
+            ...message,
+            updatedAt: now
+          },
+          $setOnInsert: {
+            createdAt: now
+          }
+        },
+        upsert: true
+      }
+    }));
+
+    const result = await this.messages.bulkWrite(operations, { ordered: false });
+    return {
+      insertedOrUpdated: result.upsertedCount + result.modifiedCount + result.matchedCount
+    };
+  }
+
+  async listSources({ includeDisabled = false, sourceIds = [], tags = [] } = {}) {
+    const filter = {};
+    if (!includeDisabled) {
+      filter.enabled = true;
+    }
+    if (sourceIds.length) {
+      filter.sourceId = { $in: sourceIds };
+    }
+    if (tags.length) {
+      filter.tags = { $in: tags };
+    }
+
+    return this.sources
+      .find(filter)
+      .sort({ title: 1 })
+      .toArray();
+  }
+
+  async resolveSourceIds({ sourceIds = [], tags = [], includeDisabled = false } = {}) {
+    const sources = await this.listSources({ sourceIds, tags, includeDisabled });
+    return sources.map((source) => source.sourceId);
+  }
+
+  async findMessages({
+    from,
+    to,
+    sourceIds = [],
+    tags = [],
+    query = '',
+    limit = 100,
+    sort = 'desc'
+  } = {}) {
+    const resolvedSourceIds = await this.resolveSourceIds({ sourceIds, tags });
+    if (resolvedSourceIds.length === 0) {
+      return [];
+    }
+
+    const filter = {
+      sourceId: { $in: resolvedSourceIds }
+    };
+
+    if (from || to) {
+      filter.date = {};
+      if (from) {
+        filter.date.$gte = new Date(from);
+      }
+      if (to) {
+        filter.date.$lt = new Date(to);
+      }
+    }
+
+    const projection = {};
+    const trimmedQuery = query.trim();
+    let cursor;
+
+    if (trimmedQuery) {
+      filter.$text = { $search: trimmedQuery };
+      projection.score = { $meta: 'textScore' };
+      cursor = this.messages
+        .find(filter, { projection })
+        .sort({ score: { $meta: 'textScore' }, date: -1 });
+    } else {
+      cursor = this.messages
+        .find(filter)
+        .sort({ date: sort === 'asc' ? 1 : -1 });
+    }
+
+    return cursor.limit(Math.min(limit, 500)).toArray();
+  }
+
+  async getMessageContext({ sourceId, messageId, before = 5, after = 5 }) {
+    const target = await this.messages.findOne({ sourceId, messageId });
+    if (!target) {
+      return null;
+    }
+
+    const beforeMessages = await this.messages
+      .find({ sourceId, messageId: { $lt: messageId } })
+      .sort({ messageId: -1 })
+      .limit(Math.min(before, 50))
+      .toArray();
+
+    const afterMessages = await this.messages
+      .find({ sourceId, messageId: { $gt: messageId } })
+      .sort({ messageId: 1 })
+      .limit(Math.min(after, 50))
+      .toArray();
+
+    return {
+      target,
+      before: beforeMessages.reverse(),
+      after: afterMessages
+    };
+  }
+
+  async saveDigest(digest) {
+    const now = new Date();
+    await this.digests.updateOne(
+      {
+        periodStart: digest.periodStart,
+        periodEnd: digest.periodEnd,
+        sourceIds: digest.sourceIds || []
+      },
+      {
+        $set: {
+          ...digest,
+          updatedAt: now
+        },
+        $setOnInsert: {
+          createdAt: now
+        }
+      },
+      { upsert: true }
+    );
+  }
+}
+
+export async function createMongoStore(config) {
+  const client = new MongoClient(config.mongoUrl);
+  await client.connect();
+  const store = new MongoTelegramStore(client.db(config.mongoDb), client);
+  await store.ensureIndexes();
+  return store;
+}

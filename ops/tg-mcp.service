@@ -1,0 +1,20 @@
+[Unit]
+Description=Telegram Digest MCP
+After=network-online.target mongod.service
+Wants=network-online.target
+Requires=mongod.service
+
+[Service]
+Type=simple
+User=s4relok
+Group=www-data
+WorkingDirectory=/srv/tg-mcp/current
+EnvironmentFile=/srv/tg-mcp/shared/.env
+ExecStart=/srv/tg-mcp/shared/node/bin/node src/server.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/srv/tg-mcp/shared/logs/app.log
+StandardError=append:/srv/tg-mcp/shared/logs/app.log
+
+[Install]
+WantedBy=multi-user.target
