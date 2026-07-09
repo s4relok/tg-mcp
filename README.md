@@ -93,6 +93,8 @@ TELEGRAM_SYNC_ON_START=true
 
 If credentials, session, or selected sources are missing, the worker logs a warning and waits for the next interval. It never prompts from the systemd service.
 
+Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports.
+
 ## VPS quick deploy
 
 The target server already has Apache, MongoDB, and bundled Node.js.

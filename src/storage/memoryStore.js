@@ -47,6 +47,20 @@ export class MemoryTelegramStore {
     return source;
   }
 
+  async markSourceSynced(sourceId, { lastSyncedMessageId = null, messageCount = 0 } = {}) {
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (!source) {
+      return null;
+    }
+
+    if (lastSyncedMessageId !== null && lastSyncedMessageId !== undefined) {
+      source.lastSyncedMessageId = Math.max(source.lastSyncedMessageId || 0, lastSyncedMessageId);
+    }
+    source.lastSyncedAt = new Date();
+    source.lastSyncMessageCount = messageCount;
+    return source;
+  }
+
   async upsertMessages(messages) {
     for (const message of messages) {
       const index = this.messages.findIndex(

@@ -95,6 +95,33 @@ export class MongoTelegramStore {
     return result;
   }
 
+  async markSourceSynced(sourceId, { lastSyncedMessageId = null, messageCount = 0 } = {}) {
+    const now = new Date();
+    const update = {
+      $set: {
+        lastSyncedAt: now,
+        lastSyncMessageCount: messageCount,
+        updatedAt: now
+      }
+    };
+
+    if (lastSyncedMessageId !== null && lastSyncedMessageId !== undefined) {
+      update.$max = {
+        lastSyncedMessageId
+      };
+    }
+
+    const result = await this.sources.findOneAndUpdate(
+      { sourceId },
+      update,
+      {
+        returnDocument: 'after'
+      }
+    );
+
+    return result;
+  }
+
   async upsertMessages(messages) {
     if (!messages.length) {
       return { insertedOrUpdated: 0 };

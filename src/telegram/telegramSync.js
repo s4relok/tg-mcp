@@ -185,6 +185,8 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
     throw new Error('No selected Telegram sources. Set ALLOWED_SOURCE_IDS or run refresh-sources and enable-source first.');
   }
 
+  const dbSources = await store.listSources({ includeDisabled: true, sourceIds: [...allowed] });
+  const dbSourceById = new Map(dbSources.map((source) => [source.sourceId, source]));
   const sources = await listTelegramSources({ client, allowedSourceIds: [...allowed] });
 
   for (const source of sources) {
@@ -198,6 +200,12 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
   for (const source of enabledSources) {
     const messages = [];
     const iterOptions = { limit: limit || config.telegramSyncLimit };
+    const dbSource = dbSourceById.get(source.sourceId);
+    const lastSyncedMessageId = Number(dbSource?.lastSyncedMessageId || 0);
+    if (!minDate && lastSyncedMessageId > 0) {
+      iterOptions.minId = lastSyncedMessageId;
+    }
+
     for await (const message of client.iterMessages(source.sourceId, iterOptions)) {
       if (!message.message) {
         continue;
@@ -212,11 +220,21 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
     }
 
     await store.upsertMessages(messages);
+    const maxMessageId = messages.reduce(
+      (max, message) => Math.max(max, message.messageId),
+      lastSyncedMessageId || 0
+    );
+    await store.markSourceSynced?.(source.sourceId, {
+      lastSyncedMessageId: maxMessageId || null,
+      messageCount: messages.length
+    });
     messageCount += messages.length;
     perSource.push({
       sourceId: source.sourceId,
       title: source.title,
-      messageCount: messages.length
+      messageCount: messages.length,
+      lastSyncedMessageId: maxMessageId || null,
+      incremental: Boolean(iterOptions.minId)
     });
   }
 

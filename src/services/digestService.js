@@ -114,6 +114,8 @@ export class TelegramDigestService {
         enabled: source.enabled !== false,
         tags: source.tags || [],
         lastSyncedMessageId: source.lastSyncedMessageId || null,
+        lastSyncedAt: source.lastSyncedAt ? toIso(source.lastSyncedAt) : null,
+        lastSyncMessageCount: source.lastSyncMessageCount ?? null,
         updatedAt: source.updatedAt ? toIso(source.updatedAt) : null
       }))
     };
