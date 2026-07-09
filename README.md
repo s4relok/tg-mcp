@@ -9,6 +9,7 @@ Read-only Telegram digest MCP server for selected Telegram chats and channels.
 - REST/OpenAPI fallback under `/tg-mcp/api` and `/tg-mcp/openapi.json`.
 - MongoDB storage.
 - GramJS-based Telegram sync CLI.
+- Optional read-only Telegram slash bot.
 - Read-only MCP tools:
   - `list_sources`
   - `get_daily_digest`
@@ -16,6 +17,7 @@ Read-only Telegram digest MCP server for selected Telegram chats and channels.
   - `search_telegram_messages`
   - `get_message_context`
   - `get_action_items`
+  - `get_source_summary`
 
 ## Local development
 
@@ -105,6 +107,29 @@ TELEGRAM_SYNC_ON_START=true
 If credentials, session, or selected sources are missing, the worker logs a warning and waits for the next interval. It never prompts from the systemd service.
 
 Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports.
+
+## Optional Telegram slash bot
+
+The HTTP service can also run a small read-only Telegram bot for quick checks against the same selected data:
+
+```text
+TELEGRAM_BOT_ENABLED=true
+TELEGRAM_BOT_TOKEN=<bot token from BotFather>
+TELEGRAM_BOT_ALLOWED_CHAT_IDS=<your chat id or comma-separated ids>
+TELEGRAM_BOT_TIMEZONE=Europe/Chisinau
+```
+
+Supported commands:
+
+```text
+/digest_today [source]
+/digest_week [source]
+/search <query>
+/actions [source]
+/sources [query]
+```
+
+`TELEGRAM_BOT_ALLOWED_CHAT_IDS` is optional, but recommended. The bot never sends Telegram messages on behalf of the synced user account; it only replies with digests/search results from MongoDB.
 
 ## VPS quick deploy
 

@@ -63,3 +63,32 @@ test('createReadinessReport can verify Telegram auth with injected client', asyn
   assert.equal(disconnected, true);
   assert.ok(report.checks.some((check) => check.name === 'telegram_auth' && check.status === 'ok'));
 });
+
+test('createReadinessReport validates optional Telegram slash bot config', async () => {
+  const missingToken = await createReadinessReport({
+    config: baseConfig({
+      telegramBotEnabled: true,
+      telegramBotToken: '',
+      telegramBotAllowedChatIds: ['123']
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+
+  assert.equal(missingToken.status, 'error');
+  assert.ok(missingToken.checks.some((check) => check.name === 'telegram_bot' && check.status === 'error'));
+
+  const openBot = await createReadinessReport({
+    config: baseConfig({
+      telegramBotEnabled: true,
+      telegramBotToken: 'token',
+      telegramBotAllowedChatIds: []
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+
+  assert.ok(openBot.checks.some((check) => check.name === 'telegram_bot' && check.status === 'warning'));
+});

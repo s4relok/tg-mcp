@@ -253,6 +253,11 @@ TELEGRAM_API_ID=
 TELEGRAM_API_HASH=
 TELEGRAM_SESSION_FILE=/srv/tg-mcp/shared/sessions/telegram.session
 
+TELEGRAM_BOT_ENABLED=false
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_BOT_ALLOWED_CHAT_IDS=
+TELEGRAM_BOT_TIMEZONE=Europe/Chisinau
+
 ALLOWED_SOURCE_IDS=
 APP_AUTH_TOKEN=
 ```
@@ -321,6 +326,11 @@ Acceptance:
   - `sync`
   - `list-sources`
   - `backfill --days N`
+- Add optional Telegram slash bot commands:
+  - `/digest_today`
+  - `/digest_week`
+  - `/search <query>`
+  - `/actions`
 - Add log rotation.
 
 ## Not in the quick version
@@ -332,15 +342,16 @@ Acceptance:
 - Public marketplace submission.
 - Complex custom UI inside ChatGPT.
 
-## Optional later: Telegram slash commands
+## Optional Telegram slash commands
 
-If useful, add a Telegram bot for quick checks:
+The quick version can run a Telegram bot for quick read-only checks against the same selected MongoDB data:
 
 ```text
 /digest_today
 /digest_week
 /search <query>
 /actions
+/sources
 ```
 
 This is separate from the ChatGPT MCP endpoint `/mcp`.

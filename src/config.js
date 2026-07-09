@@ -76,6 +76,11 @@ export function loadConfig(env = process.env) {
     telegramSyncEnabled: readBoolean(env, 'TELEGRAM_SYNC_ENABLED', false),
     telegramSyncIntervalSeconds: readNumber(env, 'TELEGRAM_SYNC_INTERVAL_SECONDS', 300),
     telegramSyncOnStart: readBoolean(env, 'TELEGRAM_SYNC_ON_START', true),
-    allowedSourceIds: readList(env, 'ALLOWED_SOURCE_IDS')
+    allowedSourceIds: readList(env, 'ALLOWED_SOURCE_IDS'),
+
+    telegramBotEnabled: readBoolean(env, 'TELEGRAM_BOT_ENABLED', false),
+    telegramBotToken: env.TELEGRAM_BOT_TOKEN || '',
+    telegramBotAllowedChatIds: readList(env, 'TELEGRAM_BOT_ALLOWED_CHAT_IDS'),
+    telegramBotTimezone: env.TELEGRAM_BOT_TIMEZONE || 'Europe/Chisinau'
   };
 }

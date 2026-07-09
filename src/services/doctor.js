@@ -44,6 +44,27 @@ function summarize(checks) {
   };
 }
 
+function telegramBotStatus(config) {
+  if (!config.telegramBotEnabled) {
+    return ok('telegram_bot', 'Telegram slash bot is disabled.');
+  }
+
+  if (!config.telegramBotToken) {
+    return error('telegram_bot', 'TELEGRAM_BOT_ENABLED is true but TELEGRAM_BOT_TOKEN is empty.');
+  }
+
+  const allowedChatCount = config.telegramBotAllowedChatIds?.length || 0;
+  if (!allowedChatCount) {
+    return warn('telegram_bot', 'Telegram slash bot is enabled without TELEGRAM_BOT_ALLOWED_CHAT_IDS.', {
+      allowedChatCount
+    });
+  }
+
+  return ok('telegram_bot', 'Telegram slash bot is configured.', {
+    allowedChatCount
+  });
+}
+
 export async function createReadinessReport({
   config,
   store,
@@ -88,6 +109,8 @@ export async function createReadinessReport({
   checks.push(config.telegramApiId && config.telegramApiHash
     ? ok('telegram_credentials', 'Telegram API credentials are configured.')
     : warn('telegram_credentials', 'TELEGRAM_API_ID and TELEGRAM_API_HASH are not fully configured.'));
+
+  checks.push(telegramBotStatus(config));
 
   checks.push(await sessionFileStatus(config.telegramSessionFile));
 
