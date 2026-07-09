@@ -17,7 +17,7 @@ fi
 
 install -m 0644 "$SOURCE" "$TARGET"
 
-if command -v logrotate >/dev/null 2>&1; then
+if [ "$(id -u)" -eq 0 ] && command -v logrotate >/dev/null 2>&1; then
   logrotate -d "$TARGET" >/dev/null
 fi
 
