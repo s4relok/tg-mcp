@@ -2,7 +2,9 @@
 
 ## Goal
 
-Build a fast read-only ChatGPT MCP integration that gives ChatGPT controlled access to one Telegram account and selected Telegram chats/channels.
+Build a fast read-only ChatGPT MCP integration that gives ChatGPT controlled access to one Telegram user account and selected Telegram chats/channels.
+
+This is a Telegram digest and search layer. It does not define a separate domain persona; the value is in controlled access to chosen Telegram sources and practical summaries of what happened there.
 
 Primary prompt:
 
@@ -46,9 +48,8 @@ No Docker for the quick version.
 - Runtime: Node.js 22.
 - HTTP server: Express.
 - Data store: MongoDB.
-- Telegram ingestion:
-  - preferred: MTProto user client via GramJS, if personal account/channel access is needed;
-  - fallback: Telegram Bot API via `grammy`, if bot-accessible chats are enough.
+- Telegram ingestion: MTProto user client via GramJS.
+- Optional Telegram slash interface: `grammy`, only for quick read-only checks against data already synced into MongoDB.
 - MCP endpoint: HTTP MCP server exposed through Apache.
 - Process manager: systemd.
 - Reverse proxy: Apache.
@@ -81,7 +82,8 @@ https://tg.celticspear.com/mcp
 ## Architecture
 
 ```text
-Telegram account / bot
+Telegram user account
+   -> selected chats/channels
    -> tg sync worker
    -> MongoDB
    -> Telegram digest service layer

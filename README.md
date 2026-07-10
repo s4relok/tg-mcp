@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml)
 
-Read-only Telegram digest MCP server for selected Telegram chats and channels.
+Read-only Telegram digest MCP server that logs into a Telegram user account and works only with selected Telegram chats and channels.
 
 ## Current shape
 
@@ -10,7 +10,7 @@ Read-only Telegram digest MCP server for selected Telegram chats and channels.
 - Express + MCP Streamable HTTP endpoint at `/mcp`.
 - REST/OpenAPI fallback under `/tg-mcp/api` and `/tg-mcp/openapi.json`.
 - MongoDB storage.
-- GramJS-based Telegram sync CLI.
+- GramJS-based Telegram user account sync CLI.
 - Optional read-only Telegram slash bot.
 - Read-only MCP tools:
   - `list_sources`
