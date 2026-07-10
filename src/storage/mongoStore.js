@@ -57,15 +57,21 @@ export class MongoTelegramStore {
       delete set.tags;
     }
 
+    const setOnInsert = {
+      createdAt: now
+    };
+    if (!Object.prototype.hasOwnProperty.call(set, 'enabled')) {
+      setOnInsert.enabled = source.enabled ?? false;
+    }
+    if (!Object.prototype.hasOwnProperty.call(set, 'tags')) {
+      setOnInsert.tags = source.tags || [];
+    }
+
     await this.sources.updateOne(
       { sourceId: source.sourceId },
       {
         $set: set,
-        $setOnInsert: {
-          enabled: source.enabled ?? false,
-          tags: source.tags || [],
-          createdAt: now
-        }
+        $setOnInsert: setOnInsert
       },
       { upsert: true }
     );
