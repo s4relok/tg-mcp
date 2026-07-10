@@ -122,13 +122,21 @@ npm run cli -- doctor --telegram
 Authenticated admin endpoints are available for operations that should not be exposed as MCP tools:
 
 ```bash
+curl -X POST http://127.0.0.1:3010/admin/sources/refresh \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>"
+
+curl -X POST http://127.0.0.1:3010/admin/sources/select \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"Project Alpha","tags":["work"]}'
+
 curl -X POST http://127.0.0.1:3010/admin/sync \
   -H "Authorization: Bearer <APP_AUTH_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"sourceIds":["<sourceId>"],"limit":100}'
 ```
 
-Use `{"backfillDays":7}` to bypass the incremental cursor for a historical import. The endpoint uses the existing Telegram session file and never prompts.
+Use `{"backfillDays":7}` with `/admin/sync` to bypass the incremental cursor for a historical import. Source management endpoints also support `/admin/sources/<sourceId>/enable`, `/admin/sources/<sourceId>/disable`, and `/admin/sources/<sourceId>/tags`. Endpoints that talk to Telegram use the existing session file and never prompt.
 
 ## Background sync
 

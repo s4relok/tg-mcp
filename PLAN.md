@@ -335,7 +335,7 @@ Acceptance:
   - `sync`
   - `list-sources`
   - `backfill --days N`
-- Add protected admin sync endpoint for non-interactive operations.
+- Add protected admin endpoints for source management and non-interactive sync.
 - Add optional Telegram slash bot commands:
   - `/digest_today`
   - `/digest_week`

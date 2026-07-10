@@ -269,6 +269,149 @@ test('admin sync route is protected and runs Telegram sync', async () => {
   }
 });
 
+test('admin source refresh route is protected and disconnects Telegram client', async () => {
+  const store = new MemoryTelegramStore();
+  let disconnected = false;
+  let refreshed = false;
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token' },
+    store,
+    digestService: createTelegramDigestService(store),
+    telegramAdmin: {
+      createClient: async () => ({
+        disconnect: async () => {
+          disconnected = true;
+        }
+      }),
+      refreshSources: async () => {
+        refreshed = true;
+        await store.upsertSource({
+          sourceId: 'chat-1',
+          title: 'Project Chat',
+          enabled: false,
+          tags: []
+        });
+        return {
+          sourceCount: 1,
+          selectedSourceCount: 0,
+          sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: false }]
+        };
+      }
+    }
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}/admin/sources/refresh`;
+
+    const unauthorized = await fetch(url, { method: 'POST' });
+    assert.equal(unauthorized.status, 401);
+
+    const authorized = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer secret-token'
+      }
+    });
+    const body = await authorized.json();
+
+    assert.equal(authorized.status, 200);
+    assert.equal(body.status, 'ok');
+    assert.equal(body.sourceCount, 1);
+    assert.equal(refreshed, true);
+    assert.equal(disconnected, true);
+  } finally {
+    server.close();
+  }
+});
+
+test('admin source management routes select, tag, enable, and disable sources', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [
+      { sourceId: '1001', title: 'Project Alpha', username: 'alpha', enabled: false, tags: [] },
+      { sourceId: '1002', title: 'Project Beta', username: 'beta', enabled: false, tags: [] }
+    ]
+  });
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token' },
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const base = `http://127.0.0.1:${port}/admin/sources`;
+    const headers = {
+      Authorization: 'Bearer secret-token',
+      'Content-Type': 'application/json'
+    };
+
+    const unauthorized = await fetch(`${base}/select`, {
+      method: 'POST',
+      body: JSON.stringify({ query: 'alpha' })
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const ambiguous = await fetch(`${base}/select`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query: 'project' })
+    });
+    const ambiguousBody = await ambiguous.json();
+    assert.equal(ambiguous.status, 409);
+    assert.equal(ambiguousBody.status, 'ambiguous');
+
+    const selected = await fetch(`${base}/select`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query: 'Project Alpha', tags: ['work'] })
+    });
+    const selectedBody = await selected.json();
+    assert.equal(selected.status, 200);
+    assert.equal(selectedBody.status, 'selected');
+    assert.equal(selectedBody.source.enabled, true);
+    assert.deepEqual(selectedBody.source.tags, ['work']);
+
+    const tagged = await fetch(`${base}/1001/tags`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tags: ['work', 'urgent'] })
+    });
+    const taggedBody = await tagged.json();
+    assert.equal(tagged.status, 200);
+    assert.equal(taggedBody.status, 'tagged');
+    assert.deepEqual(taggedBody.source.tags, ['work', 'urgent']);
+
+    const disabled = await fetch(`${base}/1001/disable`, {
+      method: 'POST',
+      headers
+    });
+    const disabledBody = await disabled.json();
+    assert.equal(disabled.status, 200);
+    assert.equal(disabledBody.status, 'disabled');
+    assert.equal(disabledBody.source.enabled, false);
+
+    const enabled = await fetch(`${base}/1001/enable`, {
+      method: 'POST',
+      headers
+    });
+    const enabledBody = await enabled.json();
+    assert.equal(enabled.status, 200);
+    assert.equal(enabledBody.status, 'enabled');
+    assert.equal(enabledBody.source.enabled, true);
+
+    const missing = await fetch(`${base}/missing/enable`, {
+      method: 'POST',
+      headers
+    });
+    assert.equal(missing.status, 404);
+  } finally {
+    server.close();
+  }
+});
+
 test('MCP endpoint exposes Telegram tools', async () => {
   const store = new MemoryTelegramStore({
     sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
