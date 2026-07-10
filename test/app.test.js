@@ -437,6 +437,22 @@ test('MCP endpoint exposes Telegram tools', async () => {
     assert.ok(names.includes('get_source_summary'));
     assert.ok(names.includes('search_telegram_messages'));
 
+    const prompts = await client.listPrompts();
+    const promptNames = prompts.prompts.map((prompt) => prompt.name);
+    assert.ok(promptNames.includes('daily_telegram_digest'));
+    assert.ok(promptNames.includes('search_telegram'));
+
+    const dailyPrompt = await client.getPrompt({
+      name: 'daily_telegram_digest',
+      arguments: {
+        date: '2026-07-09',
+        sourceQuery: 'project'
+      }
+    });
+    assert.match(dailyPrompt.messages[0].content.text, /get_sync_status/);
+    assert.match(dailyPrompt.messages[0].content.text, /get_daily_digest/);
+    assert.match(dailyPrompt.messages[0].content.text, /Source filter: project/);
+
     const result = await client.callTool({ name: 'list_sources', arguments: {} });
     assert.equal(result.structuredContent.sources[0].sourceId, 'chat-1');
 

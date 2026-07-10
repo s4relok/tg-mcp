@@ -12,6 +12,9 @@ Read-only Telegram digest MCP server that logs into a Telegram user account and 
 - MongoDB storage.
 - GramJS-based Telegram user account sync CLI.
 - Optional read-only Telegram slash bot.
+- MCP prompts:
+  - `daily_telegram_digest`
+  - `search_telegram`
 - Read-only MCP tools:
   - `list_sources`
   - `get_sync_status`

@@ -25,6 +25,74 @@ const digestExcerptSchema = {
   refresh: z.boolean().optional().describe('Bypass the digest cache and recompute from stored Telegram messages.')
 };
 
+function promptMessage(text) {
+  return {
+    messages: [
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text
+        }
+      }
+    ]
+  };
+}
+
+function formatOptionalLine(label, value) {
+  return value ? `\n${label}: ${value}` : '';
+}
+
+function registerTelegramPrompts(server) {
+  server.registerPrompt(
+    'daily_telegram_digest',
+    {
+      title: 'Daily Telegram digest',
+      description: 'Prepare a practical digest for selected Telegram chats/channels.',
+      argsSchema: {
+        date: z.string().optional().describe('Date in YYYY-MM-DD format. Defaults to today.'),
+        timezone: z.string().optional().describe('IANA timezone. Defaults to Europe/Chisinau.'),
+        sourceQuery: z.string().optional().describe('Optional source lookup by title, username, id, or tag.')
+      }
+    },
+    async ({ date, timezone, sourceQuery }) => promptMessage(
+      [
+        'Create a concise Telegram digest for the selected chats/channels.',
+        'First call get_sync_status with the same filters. If data is missing, never synced, or stale, say that before summarizing.',
+        'Then call get_daily_digest. Prioritize decisions, blockers, important updates, unanswered questions, links, and action items.',
+        'Do not paste a raw chat log unless the user asks for details.',
+        `Date: ${date || 'today'}`,
+        `Timezone: ${timezone || 'Europe/Chisinau'}${formatOptionalLine('Source filter', sourceQuery)}`
+      ].join('\n')
+    )
+  );
+
+  server.registerPrompt(
+    'search_telegram',
+    {
+      title: 'Search Telegram',
+      description: 'Search selected Telegram chats/channels and summarize the useful context.',
+      argsSchema: {
+        query: z.string().describe('Topic, person, project, link, bug, decision, or discussion to search for.'),
+        from: z.string().optional().describe('Start date in YYYY-MM-DD format, inclusive.'),
+        to: z.string().optional().describe('End date in YYYY-MM-DD format, exclusive.'),
+        timezone: z.string().optional().describe('IANA timezone. Defaults to Europe/Chisinau.'),
+        sourceQuery: z.string().optional().describe('Optional source lookup by title, username, id, or tag.')
+      }
+    },
+    async ({ query, from, to, timezone, sourceQuery }) => promptMessage(
+      [
+        'Search selected Telegram chats/channels and summarize the useful findings.',
+        'First call get_sync_status with the same source filter. If data is missing, never synced, or stale, mention that limitation.',
+        'Then call search_telegram_messages. When a hit looks important or ambiguous, call get_message_context for surrounding messages.',
+        'Group results by practical topic and include direct Telegram links when available.',
+        `Query: ${query}`,
+        `Timezone: ${timezone || 'Europe/Chisinau'}${formatOptionalLine('From', from)}${formatOptionalLine('To', to)}${formatOptionalLine('Source filter', sourceQuery)}`
+      ].join('\n')
+    )
+  );
+}
+
 export function createTelegramMcpServer({ digestService, config }) {
   const server = new McpServer(
     {
@@ -38,6 +106,8 @@ export function createTelegramMcpServer({ digestService, config }) {
       }
     }
   );
+
+  registerTelegramPrompts(server);
 
   server.registerTool(
     'list_sources',
