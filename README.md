@@ -232,6 +232,15 @@ CHECK_TELEGRAM=true ENV_FILE=/srv/tg-mcp/shared/.env ops/preflight.sh
 
 The preflight checks Node.js, git state, tests, and `doctor` against the selected env file. `CHECK_TELEGRAM=true` additionally verifies the existing Telegram session without prompting.
 
+Run a smoke test after the HTTP service is running:
+
+```bash
+AUTH_TOKEN=<APP_AUTH_TOKEN> BASE_URL=http://127.0.0.1:3010 ops/smoke.sh
+AUTH_TOKEN=<APP_AUTH_TOKEN> BASE_URL=https://celticspear.com ops/smoke.sh
+```
+
+The smoke test checks `/health`, OpenAPI, REST sync status, and an MCP initialize request.
+
 Install systemd service:
 
 ```bash
