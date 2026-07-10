@@ -56,6 +56,22 @@ If `APP_AUTH_TOKEN` is set, pass `Authorization: Bearer <token>` for REST and MC
 
 When `NODE_ENV=production`, the HTTP service refuses to start without `APP_AUTH_TOKEN` unless `ALLOW_UNAUTHENTICATED=true` is set explicitly. Keep that override only for private tests.
 
+## ChatGPT Web developer-mode test
+
+ChatGPT Web developer-mode apps do not accept a custom static bearer token for MCP. Authenticated MCP apps should implement OAuth 2.1. For a private read-only test, keep the main `/mcp` endpoint protected and expose a second no-auth endpoint with a long random path:
+
+```text
+CHATGPT_MCP_PATH=/tg-mcp/chatgpt-mcp-<long-random-slug>
+```
+
+Then paste this URL into ChatGPT Web as the developer-mode MCP server URL:
+
+```text
+https://celticspear.com/tg-mcp/chatgpt-mcp-<long-random-slug>
+```
+
+Do not publish that URL. Anyone who knows it can call the read-only MCP tools for the selected Telegram sources. For a shared or published app, replace this test path with a proper OAuth flow.
+
 ## Telegram setup
 
 Fill these values in `.env` or `/srv/tg-mcp/shared/.env`:

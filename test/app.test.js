@@ -547,3 +547,53 @@ test('MCP endpoint exposes Telegram tools', async () => {
     server.close();
   }
 });
+
+test('ChatGPT MCP path can be exposed without bearer auth', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
+  });
+  const app = createApp({
+    config: {
+      ...testConfig(),
+      appAuthToken: 'secret-token',
+      chatGptMcpPath: '/tg-mcp/chatgpt-test-mcp'
+    },
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '1.0.0' }
+        }
+      })
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const client = new Client({ name: 'tg-mcp-chatgpt-test', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/tg-mcp/chatgpt-test-mcp`)
+    );
+
+    await client.connect(transport);
+    const tools = await client.listTools();
+    assert.ok(tools.tools.some((tool) => tool.name === 'get_daily_digest'));
+    await transport.close();
+  } finally {
+    server.close();
+  }
+});

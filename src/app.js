@@ -89,6 +89,7 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
   const refreshSources = telegramAdmin.refreshSources || refreshTelegramSources;
   const syncMessages = telegramAdmin.syncMessages || syncTelegramMessages;
   const now = telegramAdmin.now || (() => new Date());
+  const allowRequest = (_req, _res, next) => next();
 
   app.get('/health', async (_req, res) => {
     try {
@@ -98,6 +99,7 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
         name: 'tg-mcp',
         storage,
         mcpPath: config.mcpPath,
+        chatGptMcpPath: config.chatGptMcpPath || null,
         restBasePath: config.restBasePath,
         openApiPath: config.openApiPath
       });
@@ -266,67 +268,74 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
 
   registerApiRoutes(app, { config, digestService, auth });
 
-  app.post(config.mcpPath, auth, async (req, res) => {
-    const sessionId = req.get('mcp-session-id');
+  function registerMcpRoutes(routePath, routeAuth) {
+    app.post(routePath, routeAuth, async (req, res) => {
+      const sessionId = req.get('mcp-session-id');
 
-    try {
-      if (sessionId && transports.has(sessionId)) {
-        await transports.get(sessionId).transport.handleRequest(req, res, req.body);
+      try {
+        if (sessionId && transports.has(sessionId)) {
+          await transports.get(sessionId).transport.handleRequest(req, res, req.body);
+          return;
+        }
+
+        if (!sessionId && isInitializeRequest(req.body)) {
+          const mcpServer = createTelegramMcpServer({ digestService, config });
+          let generatedSessionId = null;
+          const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId) => {
+              generatedSessionId = newSessionId;
+              transports.set(newSessionId, { transport, mcpServer });
+            }
+          });
+
+          transport.onclose = async () => {
+            const id = generatedSessionId || transport.sessionId;
+            if (id) {
+              transports.delete(id);
+            }
+            await mcpServer.close();
+          };
+
+          await mcpServer.connect(transport);
+          await transport.handleRequest(req, res, req.body);
+          return;
+        }
+
+        jsonRpcError(res, 400, 'Bad Request: missing or invalid MCP session.');
+      } catch (error) {
+        console.error('Error handling MCP request:', error);
+        if (!res.headersSent) {
+          jsonRpcError(res, 500, 'Internal server error.');
+        }
+      }
+    });
+
+    app.get(routePath, routeAuth, async (req, res) => {
+      const sessionId = req.get('mcp-session-id');
+      if (!sessionId || !transports.has(sessionId)) {
+        res.status(400).send('Invalid or missing MCP session id.');
         return;
       }
 
-      if (!sessionId && isInitializeRequest(req.body)) {
-        const mcpServer = createTelegramMcpServer({ digestService, config });
-        let generatedSessionId = null;
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (newSessionId) => {
-            generatedSessionId = newSessionId;
-            transports.set(newSessionId, { transport, mcpServer });
-          }
-        });
+      await transports.get(sessionId).transport.handleRequest(req, res);
+    });
 
-        transport.onclose = async () => {
-          const id = generatedSessionId || transport.sessionId;
-          if (id) {
-            transports.delete(id);
-          }
-          await mcpServer.close();
-        };
-
-        await mcpServer.connect(transport);
-        await transport.handleRequest(req, res, req.body);
+    app.delete(routePath, routeAuth, async (req, res) => {
+      const sessionId = req.get('mcp-session-id');
+      if (!sessionId || !transports.has(sessionId)) {
+        res.status(400).send('Invalid or missing MCP session id.');
         return;
       }
 
-      jsonRpcError(res, 400, 'Bad Request: missing or invalid MCP session.');
-    } catch (error) {
-      console.error('Error handling MCP request:', error);
-      if (!res.headersSent) {
-        jsonRpcError(res, 500, 'Internal server error.');
-      }
-    }
-  });
+      await transports.get(sessionId).transport.handleRequest(req, res);
+    });
+  }
 
-  app.get(config.mcpPath, auth, async (req, res) => {
-    const sessionId = req.get('mcp-session-id');
-    if (!sessionId || !transports.has(sessionId)) {
-      res.status(400).send('Invalid or missing MCP session id.');
-      return;
-    }
-
-    await transports.get(sessionId).transport.handleRequest(req, res);
-  });
-
-  app.delete(config.mcpPath, auth, async (req, res) => {
-    const sessionId = req.get('mcp-session-id');
-    if (!sessionId || !transports.has(sessionId)) {
-      res.status(400).send('Invalid or missing MCP session id.');
-      return;
-    }
-
-    await transports.get(sessionId).transport.handleRequest(req, res);
-  });
+  registerMcpRoutes(config.mcpPath, auth);
+  if (config.chatGptMcpPath && config.chatGptMcpPath !== config.mcpPath) {
+    registerMcpRoutes(config.chatGptMcpPath, allowRequest);
+  }
 
   app.use((error, _req, res, _next) => {
     if (isHttpError(error)) {
