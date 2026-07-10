@@ -1,5 +1,7 @@
 # tg-mcp
 
+[![CI](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml)
+
 Read-only Telegram digest MCP server for selected Telegram chats and channels.
 
 ## Current shape
