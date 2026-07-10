@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import fs from 'node:fs';
+
+import { parse as parseDotenv } from 'dotenv';
 
 const DEFAULT_PUBLIC_BASE_URL = 'https://celticspear.com';
 
@@ -83,4 +85,32 @@ export function loadConfig(env = process.env) {
     telegramBotAllowedChatIds: readList(env, 'TELEGRAM_BOT_ALLOWED_CHAT_IDS'),
     telegramBotTimezone: env.TELEGRAM_BOT_TIMEZONE || 'Europe/Chisinau'
   };
+}
+
+export function loadEnvFile(envFile, { required = false } = {}) {
+  if (!envFile) {
+    return {};
+  }
+
+  try {
+    return parseDotenv(fs.readFileSync(envFile, 'utf8'));
+  } catch (caught) {
+    if (caught.code === 'ENOENT') {
+      if (required) {
+        throw new Error(`Env file not found: ${envFile}`);
+      }
+      return {};
+    }
+    throw caught;
+  }
+}
+
+export function loadConfigFromProcessEnv(options = {}) {
+  const envFile = options.envFile ?? process.env.TG_MCP_ENV_FILE ?? '.env';
+  const required = options.required ?? Boolean(options.envFile || process.env.TG_MCP_ENV_FILE);
+  const fileEnv = loadEnvFile(envFile, { required });
+  return loadConfig({
+    ...fileEnv,
+    ...process.env
+  });
 }

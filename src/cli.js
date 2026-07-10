@@ -1,7 +1,7 @@
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
-import { loadConfig } from './config.js';
+import { loadConfigFromProcessEnv } from './config.js';
 import { createReadinessReport } from './services/doctor.js';
 import { setupEnvFile } from './services/envSetup.js';
 import { findSourcesForSelection, selectSource } from './services/sourceAdmin.js';
@@ -17,18 +17,18 @@ import {
 function usage() {
   console.log(`Usage:
   npm run cli -- setup-env [--env-path PATH] [--production] [--force] [--set KEY=VALUE] [--from-env KEY]
-  npm run cli -- login
-  npm run cli -- list-sources
-  npm run cli -- refresh-sources
-  npm run cli -- db-sources
-  npm run cli -- find-sources QUERY
-  npm run cli -- select-source QUERY [--tag TAG]
-  npm run cli -- enable-source SOURCE_ID [--tag TAG]
-  npm run cli -- disable-source SOURCE_ID
-  npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG]
-  npm run cli -- sync [--limit N] [--source-id ID]
-  npm run cli -- backfill --days N
-  npm run cli -- doctor [--telegram]
+  npm run cli -- login [--env-path PATH]
+  npm run cli -- list-sources [--env-path PATH]
+  npm run cli -- refresh-sources [--env-path PATH]
+  npm run cli -- db-sources [--env-path PATH]
+  npm run cli -- find-sources QUERY [--env-path PATH]
+  npm run cli -- select-source QUERY [--tag TAG] [--env-path PATH]
+  npm run cli -- enable-source SOURCE_ID [--tag TAG] [--env-path PATH]
+  npm run cli -- disable-source SOURCE_ID [--env-path PATH]
+  npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG] [--env-path PATH]
+  npm run cli -- sync [--limit N] [--source-id ID] [--env-path PATH]
+  npm run cli -- backfill --days N [--env-path PATH]
+  npm run cli -- doctor [--telegram] [--env-path PATH]
 `);
 }
 
@@ -168,7 +168,10 @@ async function main() {
     return;
   }
 
-  const config = loadConfig();
+  const config = loadConfigFromProcessEnv({
+    envFile: options.envFile,
+    required: Boolean(options.envFile)
+  });
 
   if (command === 'login') {
     const result = await withTelegram(config, (client) => createTelegramLoginReport({

@@ -115,9 +115,12 @@ Check readiness:
 ```bash
 npm run cli -- doctor
 npm run cli -- doctor --telegram
+npm run cli -- doctor --env-path /srv/tg-mcp/shared/.env
 ```
 
 `doctor` returns machine-readable checks plus `nextSteps` with the next safe commands for the current setup state. `doctor --telegram` also performs a non-interactive authorization check with the existing session file.
+
+Every CLI command that reads runtime config accepts `--env-path PATH`, and the service also honors `TG_MCP_ENV_FILE`. This is useful on the VPS because production secrets live in `/srv/tg-mcp/shared/.env`, outside the release checkout.
 
 ## Admin operations
 
@@ -214,6 +217,15 @@ Deploy code:
 ```bash
 ops/deploy.sh
 ```
+
+Run a VPS preflight from a checkout or release directory:
+
+```bash
+ENV_FILE=/srv/tg-mcp/shared/.env ops/preflight.sh
+CHECK_TELEGRAM=true ENV_FILE=/srv/tg-mcp/shared/.env ops/preflight.sh
+```
+
+The preflight checks Node.js, git state, tests, and `doctor` against the selected env file. `CHECK_TELEGRAM=true` additionally verifies the existing Telegram session without prompting.
 
 Install systemd service:
 
