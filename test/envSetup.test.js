@@ -30,6 +30,7 @@ test('setupEnvFile creates production env with generated auth token', async () =
   assert.equal(values.NODE_ENV, 'production');
   assert.equal(values.TELEGRAM_SESSION_FILE, '/srv/tg-mcp/shared/sessions/telegram.session');
   assert.equal(values.APP_AUTH_TOKEN, 'fixed-token');
+  assert.equal(values.ALLOW_UNAUTHENTICATED, 'false');
 });
 
 test('setupEnvFile preserves existing protected secrets when force is used', async () => {

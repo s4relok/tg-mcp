@@ -65,6 +65,7 @@ export function loadConfig(env = process.env) {
     openApiPath: env.OPENAPI_PATH || '/tg-mcp/openapi.json',
     allowedHosts,
     appAuthToken: env.APP_AUTH_TOKEN || '',
+    allowUnauthenticated: readBoolean(env, 'ALLOW_UNAUTHENTICATED', false),
 
     mongoUrl: env.MONGO_URL || 'mongodb://127.0.0.1:27017',
     mongoDb: env.MONGO_DB || 'tg_mcp',
@@ -85,6 +86,12 @@ export function loadConfig(env = process.env) {
     telegramBotAllowedChatIds: readList(env, 'TELEGRAM_BOT_ALLOWED_CHAT_IDS'),
     telegramBotTimezone: env.TELEGRAM_BOT_TIMEZONE || 'Europe/Chisinau'
   };
+}
+
+export function assertSafeRuntimeConfig(config) {
+  if (config.nodeEnv === 'production' && !config.appAuthToken && !config.allowUnauthenticated) {
+    throw new Error('APP_AUTH_TOKEN is required when NODE_ENV=production. Set APP_AUTH_TOKEN or explicitly set ALLOW_UNAUTHENTICATED=true for a private test environment.');
+  }
 }
 
 export function loadEnvFile(envFile, { required = false } = {}) {

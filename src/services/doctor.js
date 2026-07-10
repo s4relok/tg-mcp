@@ -72,7 +72,7 @@ function createNextSteps(checks) {
     });
   }
 
-  if (appAuth?.status === 'warning') {
+  if (appAuth?.status && appAuth.status !== 'ok') {
     addUniqueStep(steps, {
       id: 'set_app_auth',
       reason: 'MCP/REST should not be exposed without an auth token.',
@@ -155,6 +155,18 @@ function telegramBotStatus(config) {
   });
 }
 
+function appAuthStatus(config) {
+  if (config.appAuthToken) {
+    return ok('app_auth', 'APP_AUTH_TOKEN is configured.');
+  }
+
+  if (config.nodeEnv === 'production' && !config.allowUnauthenticated) {
+    return error('app_auth', 'APP_AUTH_TOKEN is required when NODE_ENV=production.');
+  }
+
+  return warn('app_auth', 'APP_AUTH_TOKEN is not configured. Public MCP/REST exposure would be unauthenticated.');
+}
+
 export async function createReadinessReport({
   config,
   store,
@@ -170,9 +182,7 @@ export async function createReadinessReport({
     openApiPath: config.openApiPath
   }));
 
-  checks.push(config.appAuthToken
-    ? ok('app_auth', 'APP_AUTH_TOKEN is configured.')
-    : warn('app_auth', 'APP_AUTH_TOKEN is not configured. Public MCP/REST exposure would be unauthenticated.'));
+  checks.push(appAuthStatus(config));
 
   try {
     checks.push(ok('mongodb', 'MongoDB ping succeeded.', await store.health()));

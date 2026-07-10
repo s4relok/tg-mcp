@@ -267,6 +267,7 @@ TELEGRAM_BOT_TIMEZONE=Europe/Chisinau
 
 ALLOWED_SOURCE_IDS=
 APP_AUTH_TOKEN=
+ALLOW_UNAUTHENTICATED=false
 ```
 
 For quick personal use, `APP_AUTH_TOKEN` can protect the MCP endpoint while developing. For a publishable ChatGPT App, replace this with the proper OAuth flow.

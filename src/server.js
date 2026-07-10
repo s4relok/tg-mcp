@@ -1,4 +1,4 @@
-import { loadConfigFromProcessEnv } from './config.js';
+import { assertSafeRuntimeConfig, loadConfigFromProcessEnv } from './config.js';
 import { createApp } from './app.js';
 import { createTelegramDigestService } from './services/digestService.js';
 import { createMongoStore } from './storage/mongoStore.js';
@@ -7,6 +7,7 @@ import { startTelegramSlashBot } from './telegram/slashBot.js';
 
 async function main() {
   const config = loadConfigFromProcessEnv();
+  assertSafeRuntimeConfig(config);
   const store = await createMongoStore(config);
   const digestService = createTelegramDigestService(store);
   const app = createApp({ config, store, digestService });

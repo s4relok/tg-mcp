@@ -54,6 +54,8 @@ curl "http://127.0.0.1:3010/tg-mcp/api/search?query=release"
 
 If `APP_AUTH_TOKEN` is set, pass `Authorization: Bearer <token>` for REST and MCP calls.
 
+When `NODE_ENV=production`, the HTTP service refuses to start without `APP_AUTH_TOKEN` unless `ALLOW_UNAUTHENTICATED=true` is set explicitly. Keep that override only for private tests.
+
 ## Telegram setup
 
 Fill these values in `.env` or `/srv/tg-mcp/shared/.env`:

@@ -43,6 +43,22 @@ test('createReadinessReport returns warning when setup is incomplete', async () 
   assert.equal(JSON.stringify(report.nextSteps).includes('secret-hash'), false);
 });
 
+test('createReadinessReport reports production auth as an error when missing', async () => {
+  const report = await createReadinessReport({
+    config: {
+      ...baseConfig(),
+      nodeEnv: 'production',
+      appAuthToken: '',
+      allowUnauthenticated: false
+    },
+    store: new MemoryTelegramStore()
+  });
+
+  assert.equal(report.status, 'error');
+  assert.ok(report.checks.some((check) => check.name === 'app_auth' && check.status === 'error'));
+  assert.ok(report.nextSteps.some((step) => step.id === 'set_app_auth'));
+});
+
 test('createReadinessReport can verify Telegram auth with injected client', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-doctor-'));
   const sessionFile = path.join(tmp, 'telegram.session');

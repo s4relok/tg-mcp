@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { loadConfigFromProcessEnv } from '../src/config.js';
+import { assertSafeRuntimeConfig, loadConfigFromProcessEnv } from '../src/config.js';
 
 test('loadConfigFromProcessEnv reads an explicit env file with process env precedence', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-config-'));
@@ -58,4 +58,27 @@ test('loadConfigFromProcessEnv rejects a missing explicit env file', () => {
     () => loadConfigFromProcessEnv({ envFile: path.join(os.tmpdir(), 'missing-tg-mcp.env') }),
     /Env file not found/
   );
+});
+
+test('assertSafeRuntimeConfig requires auth in production', () => {
+  assert.throws(
+    () => assertSafeRuntimeConfig({
+      nodeEnv: 'production',
+      appAuthToken: '',
+      allowUnauthenticated: false
+    }),
+    /APP_AUTH_TOKEN is required/
+  );
+
+  assert.doesNotThrow(() => assertSafeRuntimeConfig({
+    nodeEnv: 'production',
+    appAuthToken: 'token',
+    allowUnauthenticated: false
+  }));
+
+  assert.doesNotThrow(() => assertSafeRuntimeConfig({
+    nodeEnv: 'production',
+    appAuthToken: '',
+    allowUnauthenticated: true
+  }));
 });

@@ -29,7 +29,8 @@ const ENV_ORDER = [
   'TELEGRAM_BOT_ALLOWED_CHAT_IDS',
   'TELEGRAM_BOT_TIMEZONE',
   'ALLOWED_SOURCE_IDS',
-  'APP_AUTH_TOKEN'
+  'APP_AUTH_TOKEN',
+  'ALLOW_UNAUTHENTICATED'
 ];
 
 const PROTECTED_KEYS = new Set([
@@ -65,7 +66,8 @@ function defaultEnv({ production = false, tokenFactory = generateAuthToken } = {
     TELEGRAM_BOT_ALLOWED_CHAT_IDS: '',
     TELEGRAM_BOT_TIMEZONE: 'Europe/Chisinau',
     ALLOWED_SOURCE_IDS: '',
-    APP_AUTH_TOKEN: tokenFactory()
+    APP_AUTH_TOKEN: tokenFactory(),
+    ALLOW_UNAUTHENTICATED: 'false'
   };
 }
 
