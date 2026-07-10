@@ -59,6 +59,28 @@ test('createReadinessReport reports production auth as an error when missing', a
   assert.ok(report.nextSteps.some((step) => step.id === 'set_app_auth'));
 });
 
+test('createReadinessReport includes env path in CLI next steps', async () => {
+  const envFile = '/srv/tg-mcp/shared/.env';
+  const report = await createReadinessReport({
+    config: {
+      ...baseConfig(),
+      appAuthToken: '',
+      telegramApiId: '',
+      telegramApiHash: ''
+    },
+    envFile,
+    store: new MemoryTelegramStore()
+  });
+
+  const commands = report.nextSteps.map((step) => step.command).join('\n');
+  assert.match(commands, /setup-env --env-path '\/srv\/tg-mcp\/shared\/.env'/);
+  assert.match(commands, /login --env-path '\/srv\/tg-mcp\/shared\/.env'/);
+  assert.match(commands, /doctor --telegram --env-path '\/srv\/tg-mcp\/shared\/.env'/);
+  assert.match(commands, /refresh-sources --env-path '\/srv\/tg-mcp\/shared\/.env'/);
+  assert.match(commands, /find-sources "<query>" --env-path '\/srv\/tg-mcp\/shared\/.env'/);
+  assert.match(commands, /sync --env-path '\/srv\/tg-mcp\/shared\/.env'/);
+});
+
 test('createReadinessReport can verify Telegram auth with injected client', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-doctor-'));
   const sessionFile = path.join(tmp, 'telegram.session');

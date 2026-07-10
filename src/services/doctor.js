@@ -54,7 +54,19 @@ function addUniqueStep(steps, step) {
   }
 }
 
-function createNextSteps(checks) {
+function quoteShell(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function envPathArg(envFile) {
+  return envFile ? ` --env-path ${quoteShell(envFile)}` : '';
+}
+
+function cliCommand(command, envFile) {
+  return `npm run cli -- ${command}${envPathArg(envFile)}`;
+}
+
+function createNextSteps(checks, { envFile } = {}) {
   const steps = [];
   const mongodb = findCheck(checks, 'mongodb');
   const appAuth = findCheck(checks, 'app_auth');
@@ -76,7 +88,7 @@ function createNextSteps(checks) {
     addUniqueStep(steps, {
       id: 'set_app_auth',
       reason: 'MCP/REST should not be exposed without an auth token.',
-      command: 'npm run cli -- setup-env'
+      command: cliCommand('setup-env', envFile)
     });
   }
 
@@ -84,7 +96,7 @@ function createNextSteps(checks) {
     addUniqueStep(steps, {
       id: 'set_telegram_credentials',
       reason: 'Telegram API credentials are required before login and sync.',
-      command: 'export TELEGRAM_API_ID=<api_id>; export TELEGRAM_API_HASH=<api_hash>; npm run cli -- setup-env --from-env TELEGRAM_API_ID --from-env TELEGRAM_API_HASH'
+      command: `export TELEGRAM_API_ID=<api_id>; export TELEGRAM_API_HASH=<api_hash>; ${cliCommand('setup-env --from-env TELEGRAM_API_ID --from-env TELEGRAM_API_HASH', envFile)}`
     });
   }
 
@@ -92,7 +104,7 @@ function createNextSteps(checks) {
     addUniqueStep(steps, {
       id: 'login_telegram',
       reason: 'A valid Telegram user session is required before reading selected chats.',
-      command: 'npm run cli -- login && npm run cli -- doctor --telegram'
+      command: `${cliCommand('login', envFile)} && ${cliCommand('doctor --telegram', envFile)}`
     });
   }
 
@@ -104,8 +116,8 @@ function createNextSteps(checks) {
         ? 'Telegram sources exist in MongoDB but none are enabled.'
         : 'Telegram sources have not been imported into MongoDB yet.',
       command: total
-        ? 'npm run cli -- find-sources <query>; npm run cli -- select-source "<title or id>" --tag work; npm run cli -- sync'
-        : 'npm run cli -- refresh-sources; npm run cli -- find-sources <query>; npm run cli -- select-source "<title or id>" --tag work; npm run cli -- sync'
+        ? `${cliCommand('find-sources "<query>"', envFile)}; ${cliCommand('select-source "<title or id>" --tag work', envFile)}; ${cliCommand('sync', envFile)}`
+        : `${cliCommand('refresh-sources', envFile)}; ${cliCommand('find-sources "<query>"', envFile)}; ${cliCommand('select-source "<title or id>" --tag work', envFile)}; ${cliCommand('sync', envFile)}`
     });
   }
 
@@ -171,6 +183,7 @@ export async function createReadinessReport({
   config,
   store,
   checkTelegram = false,
+  envFile = '',
   createClient = createAuthorizedTelegramClient
 }) {
   const checks = [];
@@ -233,7 +246,7 @@ export async function createReadinessReport({
     status: summary.status,
     generatedAt: new Date().toISOString(),
     summary,
-    nextSteps: createNextSteps(checks),
+    nextSteps: createNextSteps(checks, { envFile }),
     checks
   };
 }

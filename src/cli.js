@@ -209,7 +209,8 @@ async function main() {
       const report = await createReadinessReport({
         config,
         store,
-        checkTelegram: Boolean(options.telegram)
+        checkTelegram: Boolean(options.telegram),
+        envFile: options.envFile || ''
       });
       console.log(JSON.stringify(report, null, 2));
       if (report.status === 'error') {
