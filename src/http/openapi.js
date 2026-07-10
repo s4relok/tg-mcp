@@ -28,6 +28,13 @@ function jsonResponse(description) {
   };
 }
 
+function endpointResponses(successDescription) {
+  return {
+    200: jsonResponse(successDescription),
+    400: jsonResponse('Bad request.')
+  };
+}
+
 export function createOpenApiDocument(config) {
   const api = config.restBasePath;
   return {
@@ -60,9 +67,7 @@ export function createOpenApiDocument(config) {
             parameter('includeDisabled', 'Include disabled sources.', { type: 'boolean' }),
             ...sourceFilterParameters
           ],
-          responses: {
-            200: jsonResponse('Telegram sources.')
-          }
+          responses: endpointResponses('Telegram sources.')
         }
       },
       [`${api}/sync/status`]: {
@@ -74,9 +79,7 @@ export function createOpenApiDocument(config) {
             parameter('staleAfterHours', 'Mark sources stale after this many hours. Defaults to 24.', { type: 'integer', minimum: 1, maximum: 168 }),
             ...sourceFilterParameters
           ],
-          responses: {
-            200: jsonResponse('Telegram source sync status.')
-          }
+          responses: endpointResponses('Telegram source sync status.')
         }
       },
       [`${api}/digest/daily`]: {
@@ -91,9 +94,7 @@ export function createOpenApiDocument(config) {
             parameter('refresh', 'Bypass the digest cache and recompute from stored Telegram messages.', { type: 'boolean' }),
             ...sourceFilterParameters
           ],
-          responses: {
-            200: jsonResponse('Daily digest.')
-          }
+          responses: endpointResponses('Daily digest.')
         }
       },
       [`${api}/summary/period`]: {
@@ -109,9 +110,7 @@ export function createOpenApiDocument(config) {
             parameter('refresh', 'Bypass the digest cache and recompute from stored Telegram messages.', { type: 'boolean' }),
             ...sourceFilterParameters
           ],
-          responses: {
-            200: jsonResponse('Period summary.')
-          }
+          responses: endpointResponses('Period summary.')
         }
       },
       [`${api}/sources/{sourceId}/summary`]: {
@@ -134,9 +133,7 @@ export function createOpenApiDocument(config) {
             parameter('timelineLimit', 'Maximum timeline excerpt count.', { type: 'integer', minimum: 1, maximum: 200 }),
             parameter('refresh', 'Bypass the digest cache and recompute from stored Telegram messages.', { type: 'boolean' })
           ],
-          responses: {
-            200: jsonResponse('Source summary.')
-          }
+          responses: endpointResponses('Source summary.')
         }
       },
       [`${api}/search`]: {
@@ -151,9 +148,7 @@ export function createOpenApiDocument(config) {
             parameter('limit', 'Maximum result count.', { type: 'integer', minimum: 1, maximum: 100 }),
             ...sourceFilterParameters
           ],
-          responses: {
-            200: jsonResponse('Search results.')
-          }
+          responses: endpointResponses('Search results.')
         }
       },
       [`${api}/messages/context`]: {
@@ -166,9 +161,7 @@ export function createOpenApiDocument(config) {
             parameter('before', 'Messages before target.', { type: 'integer', minimum: 0, maximum: 50 }),
             parameter('after', 'Messages after target.', { type: 'integer', minimum: 0, maximum: 50 })
           ],
-          responses: {
-            200: jsonResponse('Message context.')
-          }
+          responses: endpointResponses('Message context.')
         }
       },
       [`${api}/actions`]: {
@@ -182,9 +175,7 @@ export function createOpenApiDocument(config) {
             parameter('limit', 'Maximum action item count.', { type: 'integer', minimum: 1, maximum: 100 }),
             ...sourceFilterParameters
           ],
-          responses: {
-            200: jsonResponse('Action items.')
-          }
+          responses: endpointResponses('Action items.')
         }
       }
     }

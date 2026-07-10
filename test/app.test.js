@@ -70,6 +70,7 @@ test('OpenAPI endpoint exposes REST fallback schema', async () => {
     assert.ok(body.paths['/tg-mcp/api/digest/daily']);
     assert.ok(body.paths['/tg-mcp/api/search']);
     assert.ok(body.paths['/tg-mcp/api/sync/status']);
+    assert.ok(body.paths['/tg-mcp/api/search'].get.responses[400]);
   } finally {
     server.close();
   }
@@ -161,6 +162,88 @@ test('REST fallback honors bearer auth when configured', async () => {
       }
     });
     assert.equal(authorized.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test('REST and admin endpoints return bad_request for invalid client input', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
+  });
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token' },
+    store,
+    digestService: createTelegramDigestService(store),
+    telegramAdmin: {
+      createClient: async () => ({
+        disconnect: async () => {}
+      }),
+      syncMessages: async () => ({ sourceCount: 0, messageCount: 0, sources: [] })
+    }
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const api = `http://127.0.0.1:${port}/tg-mcp/api`;
+    const authHeaders = {
+      Authorization: 'Bearer secret-token'
+    };
+
+    const missingSearch = await fetch(`${api}/search`, { headers: authHeaders });
+    const missingSearchBody = await missingSearch.json();
+    assert.equal(missingSearch.status, 400);
+    assert.equal(missingSearchBody.error, 'bad_request');
+    assert.equal(missingSearchBody.message, 'query is required');
+
+    const badLimit = await fetch(`${api}/digest/daily?timelineLimit=10abc`, { headers: authHeaders });
+    const badLimitBody = await badLimit.json();
+    assert.equal(badLimit.status, 400);
+    assert.equal(badLimitBody.error, 'bad_request');
+    assert.equal(badLimitBody.message, 'timelineLimit must be an integer');
+
+    const missingMessageId = await fetch(`${api}/messages/context?sourceId=chat-1`, { headers: authHeaders });
+    const missingMessageIdBody = await missingMessageId.json();
+    assert.equal(missingMessageId.status, 400);
+    assert.equal(missingMessageIdBody.message, 'messageId is required');
+
+    const badSync = await fetch(`http://127.0.0.1:${port}/admin/sync`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ limit: 0 })
+    });
+    const badSyncBody = await badSync.json();
+    assert.equal(badSync.status, 400);
+    assert.equal(badSyncBody.error, 'bad_request');
+    assert.equal(badSyncBody.message, 'Expected positive integer, got 0');
+
+    const badStringSync = await fetch(`http://127.0.0.1:${port}/admin/sync`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ limit: '10abc' })
+    });
+    const badStringSyncBody = await badStringSync.json();
+    assert.equal(badStringSync.status, 400);
+    assert.equal(badStringSyncBody.message, 'Expected positive integer, got 10abc');
+
+    const badSelect = await fetch(`http://127.0.0.1:${port}/admin/sources/select`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query: '' })
+    });
+    const badSelectBody = await badSelect.json();
+    assert.equal(badSelect.status, 400);
+    assert.equal(badSelectBody.message, 'query is required');
   } finally {
     server.close();
   }

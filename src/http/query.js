@@ -1,3 +1,5 @@
+import { BadRequestError } from './errors.js';
+
 function toArray(value) {
   if (value === undefined) {
     return [];
@@ -18,15 +20,30 @@ function toBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
-function toInteger(value, fallback) {
+function toInteger(value, fallback, { name = 'value', min, max } = {}) {
   if (value === undefined || value === '') {
     return fallback;
   }
-  const parsed = Number.parseInt(value, 10);
-  if (Number.isNaN(parsed)) {
-    throw new Error(`Expected integer, got ${value}`);
+  const text = String(value).trim();
+  if (!/^-?\d+$/.test(text)) {
+    throw new BadRequestError(`${name} must be an integer`);
+  }
+  const parsed = Number.parseInt(text, 10);
+  if (min !== undefined && parsed < min) {
+    throw new BadRequestError(`${name} must be at least ${min}`);
+  }
+  if (max !== undefined && parsed > max) {
+    throw new BadRequestError(`${name} must be at most ${max}`);
   }
   return parsed;
+}
+
+function requiredString(value, name) {
+  const text = value === undefined || value === null ? '' : String(value).trim();
+  if (!text) {
+    throw new BadRequestError(`${name} is required`);
+  }
+  return text;
 }
 
 export function sourceFilters(query) {
@@ -49,7 +66,7 @@ export function parseDailyDigestQuery(query) {
     date: query.date ? String(query.date) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
     includeTimeline: toBoolean(query.includeTimeline, true),
-    timelineLimit: toInteger(query.timelineLimit, undefined),
+    timelineLimit: toInteger(query.timelineLimit, undefined, { name: 'timelineLimit', min: 1, max: 200 }),
     refresh: toBoolean(query.refresh),
     ...sourceFilters(query)
   };
@@ -57,11 +74,11 @@ export function parseDailyDigestQuery(query) {
 
 export function parsePeriodSummaryQuery(query) {
   return {
-    from: query.from ? String(query.from) : undefined,
-    to: query.to ? String(query.to) : undefined,
+    from: requiredString(query.from, 'from'),
+    to: requiredString(query.to, 'to'),
     timezone: query.timezone ? String(query.timezone) : undefined,
     includeTimeline: toBoolean(query.includeTimeline, true),
-    timelineLimit: toInteger(query.timelineLimit, undefined),
+    timelineLimit: toInteger(query.timelineLimit, undefined, { name: 'timelineLimit', min: 1, max: 200 }),
     refresh: toBoolean(query.refresh),
     ...sourceFilters(query)
   };
@@ -75,28 +92,28 @@ export function parseSourceSummaryQuery(query, params = {}) {
     to: query.to ? String(query.to) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
     includeTimeline: toBoolean(query.includeTimeline, true),
-    timelineLimit: toInteger(query.timelineLimit, undefined),
+    timelineLimit: toInteger(query.timelineLimit, undefined, { name: 'timelineLimit', min: 1, max: 200 }),
     refresh: toBoolean(query.refresh)
   };
 }
 
 export function parseSearchQuery(query) {
   return {
-    query: query.query ? String(query.query) : '',
+    query: requiredString(query.query, 'query'),
     from: query.from ? String(query.from) : undefined,
     to: query.to ? String(query.to) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
-    limit: toInteger(query.limit, undefined),
+    limit: toInteger(query.limit, undefined, { name: 'limit', min: 1, max: 100 }),
     ...sourceFilters(query)
   };
 }
 
 export function parseMessageContextQuery(query) {
   return {
-    sourceId: query.sourceId ? String(query.sourceId) : '',
-    messageId: toInteger(query.messageId, undefined),
-    before: toInteger(query.before, undefined),
-    after: toInteger(query.after, undefined)
+    sourceId: requiredString(query.sourceId, 'sourceId'),
+    messageId: toInteger(requiredString(query.messageId, 'messageId'), undefined, { name: 'messageId' }),
+    before: toInteger(query.before, undefined, { name: 'before', min: 0, max: 50 }),
+    after: toInteger(query.after, undefined, { name: 'after', min: 0, max: 50 })
   };
 }
 
@@ -105,7 +122,7 @@ export function parseActionItemsQuery(query) {
     from: query.from ? String(query.from) : undefined,
     to: query.to ? String(query.to) : undefined,
     timezone: query.timezone ? String(query.timezone) : undefined,
-    limit: toInteger(query.limit, undefined),
+    limit: toInteger(query.limit, undefined, { name: 'limit', min: 1, max: 100 }),
     ...sourceFilters(query)
   };
 }
@@ -113,7 +130,7 @@ export function parseActionItemsQuery(query) {
 export function parseSyncStatusQuery(query) {
   return {
     includeDisabled: toBoolean(query.includeDisabled),
-    staleAfterHours: toInteger(query.staleAfterHours, undefined),
+    staleAfterHours: toInteger(query.staleAfterHours, undefined, { name: 'staleAfterHours', min: 1, max: 168 }),
     ...sourceFilters(query)
   };
 }

@@ -4,6 +4,7 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 
+import { BadRequestError, isHttpError } from './http/errors.js';
 import { registerApiRoutes } from './http/apiRoutes.js';
 import { requireAppToken } from './http/auth.js';
 import { createOpenApiDocument } from './http/openapi.js';
@@ -29,9 +30,13 @@ function toPositiveInteger(value) {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`Expected positive integer, got ${value}`);
+  const text = String(value).trim();
+  if (!/^\d+$/.test(text)) {
+    throw new BadRequestError(`Expected positive integer, got ${value}`);
+  }
+  const parsed = Number.parseInt(text, 10);
+  if (parsed < 1) {
+    throw new BadRequestError(`Expected positive integer, got ${value}`);
   }
   return parsed;
 }
@@ -136,6 +141,9 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
 
   app.post('/admin/sources/select', auth, async (req, res, next) => {
     try {
+      if (!String(req.body?.query || '').trim()) {
+        throw new BadRequestError('query is required');
+      }
       const result = await selectSource(store, {
         query: String(req.body?.query || ''),
         tags: toArray(req.body?.tags ?? req.body?.tag)
@@ -321,6 +329,14 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
   });
 
   app.use((error, _req, res, _next) => {
+    if (isHttpError(error)) {
+      res.status(error.statusCode).json({
+        error: error.code,
+        message: error.message
+      });
+      return;
+    }
+
     console.error(error);
     res.status(500).json({ error: 'internal_server_error' });
   });
