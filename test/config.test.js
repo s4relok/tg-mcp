@@ -19,6 +19,9 @@ test('loadConfigFromProcessEnv reads an explicit env file with process env prece
     'OPENAI_API_KEY=file-openai-key',
     'OPENAI_TRANSCRIPTION_ENABLED=true',
     'OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe',
+    'AUDIO_TRANSCRIPTION_SOURCE_IDS=saved,archive',
+    'AUDIO_TRANSCRIPTION_SOURCE_TAGS=voice',
+    'AUDIO_TRANSCRIPTION_INTERVAL_SECONDS=3600',
     'AUDIO_TRANSCRIPTION_BATCH_SIZE=2',
     ''
   ].join('\n'));
@@ -33,6 +36,9 @@ test('loadConfigFromProcessEnv reads an explicit env file with process env prece
     'OPENAI_API_KEY',
     'OPENAI_TRANSCRIPTION_ENABLED',
     'OPENAI_TRANSCRIPTION_MODEL',
+    'AUDIO_TRANSCRIPTION_SOURCE_IDS',
+    'AUDIO_TRANSCRIPTION_SOURCE_TAGS',
+    'AUDIO_TRANSCRIPTION_INTERVAL_SECONDS',
     'AUDIO_TRANSCRIPTION_BATCH_SIZE'
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
@@ -53,6 +59,9 @@ test('loadConfigFromProcessEnv reads an explicit env file with process env prece
     assert.equal(config.openAiApiKey, 'file-openai-key');
     assert.equal(config.openAiTranscriptionEnabled, true);
     assert.equal(config.openAiTranscriptionModel, 'gpt-4o-mini-transcribe');
+    assert.deepEqual(config.audioTranscriptionSourceIds, ['saved', 'archive']);
+    assert.deepEqual(config.audioTranscriptionSourceTags, ['voice']);
+    assert.equal(config.audioTranscriptionIntervalSeconds, 3600);
     assert.equal(config.audioTranscriptionBatchSize, 2);
   } finally {
     for (const key of keys) {

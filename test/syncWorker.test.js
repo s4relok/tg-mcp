@@ -64,6 +64,66 @@ test('Telegram sync worker runOnce syncs and disconnects client', async () => {
   assert.equal(disconnected, true);
 });
 
+test('Telegram sync worker runs post-sync hook only when audio messages were synced', async () => {
+  let syncRuns = 0;
+  let postSyncCalls = 0;
+  const worker = createTelegramSyncWorker({
+    config: baseConfig(),
+    store: {},
+    logger: silentLogger(),
+    createClient: async () => ({
+      disconnect: async () => {}
+    }),
+    syncMessages: async () => {
+      syncRuns += 1;
+      return {
+        sourceCount: 1,
+        messageCount: 2,
+        audioMessageCount: syncRuns === 1 ? 0 : 1
+      };
+    },
+    afterSync: async () => {
+      postSyncCalls += 1;
+    }
+  });
+
+  await worker.runOnce();
+  assert.equal(postSyncCalls, 0);
+
+  await worker.runOnce();
+  assert.equal(postSyncCalls, 1);
+});
+
+test('Telegram sync worker reports post-sync hook errors without failing sync result', async () => {
+  const warnings = [];
+  const worker = createTelegramSyncWorker({
+    config: baseConfig(),
+    store: {},
+    logger: {
+      info() {},
+      warn(message) {
+        warnings.push(message);
+      }
+    },
+    createClient: async () => ({
+      disconnect: async () => {}
+    }),
+    syncMessages: async () => ({
+      sourceCount: 1,
+      messageCount: 1,
+      audioMessageCount: 1
+    }),
+    afterSync: async () => {
+      throw new Error('transcription busy');
+    }
+  });
+
+  const result = await worker.runOnce();
+
+  assert.equal(result.audioMessageCount, 1);
+  assert.ok(warnings.some((message) => /transcription busy/.test(message)));
+});
+
 test('Telegram sync worker reports sync errors without throwing', async () => {
   const warnings = [];
   const worker = createTelegramSyncWorker({

@@ -161,3 +161,24 @@ test('createReadinessReport warns when OpenAI transcription is enabled without a
   assert.ok(report.checks.some((check) => check.name === 'openai_transcription' && check.status === 'warning'));
   assert.ok(report.nextSteps.some((step) => step.id === 'configure_openai_transcription'));
 });
+
+test('createReadinessReport warns when OpenAI transcription has no allowed sources', async () => {
+  const report = await createReadinessReport({
+    config: baseConfig({
+      openAiTranscriptionEnabled: true,
+      openAiApiKey: 'test-key',
+      openAiTranscriptionModel: 'gpt-4o-transcribe',
+      audioTranscriptionSourceIds: [],
+      audioTranscriptionSourceTags: [],
+      audioTranscriptionWorkDir: '/srv/tg-mcp/shared/audio-work'
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+
+  const check = report.checks.find((item) => item.name === 'openai_transcription');
+  assert.equal(check.status, 'warning');
+  assert.equal(check.details.missingSourceFilter, true);
+  assert.ok(report.nextSteps.some((step) => /AUDIO_TRANSCRIPTION_SOURCE_IDS/.test(step.command)));
+});

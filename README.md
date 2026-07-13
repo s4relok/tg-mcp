@@ -202,10 +202,15 @@ Enable the OpenAI Audio Transcriptions worker:
 OPENAI_API_KEY=<openai_api_key>
 OPENAI_TRANSCRIPTION_ENABLED=true
 OPENAI_TRANSCRIPTION_MODEL=gpt-4o-transcribe
+AUDIO_TRANSCRIPTION_SOURCE_IDS=<saved_messages_source_id>
+AUDIO_TRANSCRIPTION_INTERVAL_SECONDS=3600
+AUDIO_TRANSCRIPTION_BATCH_SIZE=1
 AUDIO_TRANSCRIPTION_WORK_DIR=/srv/tg-mcp/shared/audio-work
 ```
 
-The worker downloads Telegram media into the work directory, submits it to the OpenAI Audio Transcriptions API, stores only the transcript/metadata by default, and removes the temporary audio file. Files larger than `AUDIO_TRANSCRIPTION_MAX_FILE_BYTES` are split with `ffmpeg` when `AUDIO_TRANSCRIPTION_SPLIT_LARGE_FILES=true`.
+The background worker only claims jobs from explicitly configured transcription sources: `AUDIO_TRANSCRIPTION_SOURCE_IDS` or `AUDIO_TRANSCRIPTION_SOURCE_TAGS`. If neither is set, it will not process pending audio from arbitrary enabled Telegram chats. When background sync stores at least one audio/voice message, the service immediately runs one bounded transcription pass; `AUDIO_TRANSCRIPTION_INTERVAL_SECONDS` remains a safety polling interval. Keep `AUDIO_TRANSCRIPTION_BATCH_SIZE=1` to cap each pass to one OpenAI request.
+
+The worker downloads Telegram media into the work directory, submits it to the OpenAI Audio Transcriptions API, stores only the transcript/metadata by default, and removes the temporary audio file. Completed items have `transcriptText` plus `transcription.status=done`, so later runs do not claim the same file again. Files larger than `AUDIO_TRANSCRIPTION_MAX_FILE_BYTES` are split with `ffmpeg` when `AUDIO_TRANSCRIPTION_SPLIT_LARGE_FILES=true`.
 
 Manual operations:
 

@@ -16,8 +16,10 @@ function baseConfig(overrides = {}) {
     openAiTranscriptionPrompt: '',
     openAiTranscriptionLanguage: '',
     openAiTranscriptionChunkingStrategy: '',
+    audioTranscriptionSourceIds: ['saved'],
+    audioTranscriptionSourceTags: [],
     audioTranscriptionBatchSize: 1,
-    audioTranscriptionIntervalSeconds: 60,
+    audioTranscriptionIntervalSeconds: 3600,
     audioTranscriptionLockMs: 600000,
     audioTranscriptionMaxAttempts: 2,
     audioTranscriptionWorkDir: '',
@@ -141,4 +143,94 @@ test('audio transcription worker schedules retry before final failure', async ()
   [message] = await store.findMessages({ sourceIds: ['saved'] });
   assert.equal(message.transcription.status, 'failed');
   assert.equal(message.transcription.attempts, 2);
+});
+
+test('audio transcription worker skips background work without explicit transcription sources', async () => {
+  const store = storeWithPendingAudio();
+  let transcriberCreated = false;
+  const worker = createAudioTranscriptionWorker({
+    config: baseConfig({
+      audioTranscriptionSourceIds: [],
+      audioTranscriptionSourceTags: []
+    }),
+    store,
+    createTranscriber: () => {
+      transcriberCreated = true;
+      return {
+        transcribe: async () => ({ text: 'should not run' })
+      };
+    }
+  });
+
+  const result = await worker.runOnce({ force: true });
+
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'no_transcription_sources');
+  assert.equal(result.processedCount, 0);
+  assert.equal(transcriberCreated, false);
+});
+
+test('audio transcription worker only claims configured transcription sources', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-audio-worker-sources-'));
+  const downloadedPath = path.join(tmp, 'saved.ogg');
+  const store = new MemoryTelegramStore({
+    sources: [
+      { sourceId: 'saved', title: 'Saved Messages', enabled: true, tags: [] },
+      { sourceId: 'other', title: 'Other Chat', enabled: true, tags: [] }
+    ],
+    messages: [
+      {
+        sourceId: 'other',
+        sourceTitle: 'Other Chat',
+        messageId: 201,
+        date: '2026-07-09T11:00:00.000Z',
+        text: '',
+        transcriptText: '',
+        media: { kind: 'voice', mimeType: 'audio/ogg', durationSec: 60 },
+        transcription: { status: 'pending', attempts: 0 }
+      },
+      {
+        sourceId: 'saved',
+        sourceTitle: 'Saved Messages',
+        messageId: 101,
+        date: '2026-07-09T10:00:00.000Z',
+        text: '',
+        transcriptText: '',
+        media: { kind: 'voice', mimeType: 'audio/ogg', durationSec: 60 },
+        transcription: { status: 'pending', attempts: 0 }
+      }
+    ]
+  });
+
+  const worker = createAudioTranscriptionWorker({
+    config: baseConfig({
+      audioTranscriptionSourceIds: ['saved'],
+      audioTranscriptionWorkDir: tmp
+    }),
+    store,
+    createClient: async () => ({
+      disconnect: async () => {}
+    }),
+    createTranscriber: () => ({
+      transcribe: async () => ({
+        model: 'gpt-4o-transcribe',
+        responseFormat: 'json',
+        text: 'Saved transcript'
+      })
+    }),
+    getMessage: async ({ sourceId, messageId }) => ({ sourceId, messageId }),
+    downloadAudio: async () => {
+      await fs.writeFile(downloadedPath, 'audio-bytes');
+      return { filePath: downloadedPath, size: 11 };
+    }
+  });
+
+  const result = await worker.runOnce({ force: true });
+
+  assert.equal(result.completed, 1);
+  assert.deepEqual(result.sourceIds, ['saved']);
+  const savedMessages = await store.findMessages({ sourceIds: ['saved'], query: 'Saved transcript' });
+  const otherMessages = await store.findMessages({ sourceIds: ['other'] });
+  assert.equal(savedMessages.length, 1);
+  assert.equal(otherMessages[0].transcription.status, 'pending');
 });

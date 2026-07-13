@@ -102,7 +102,7 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
       downloadAudio: audioTranscriptionAdmin.downloadAudio,
       now: audioTranscriptionAdmin.now || now
     });
-    return worker.runOnce({ ...args, force: true });
+    return worker.runOnce({ ...args, force: args.force ?? true });
   });
 
   app.get('/health', async (_req, res) => {
@@ -261,10 +261,17 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
         limit: toPositiveInteger(body.limit),
         minDate: minDateFromBackfillDays(backfillDays, now())
       });
+      const audioTranscription = result.audioMessageCount > 0
+        ? await runAudioTranscriptions({
+          limit: config.audioTranscriptionBatchSize,
+          force: false
+        })
+        : null;
 
       res.json({
         status: 'ok',
         backfillDays: backfillDays || null,
+        audioTranscription,
         ...result
       });
     } catch (caught) {

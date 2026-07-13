@@ -186,11 +186,13 @@ test('syncTelegramMessages stores only whitelisted sources and honors minDate', 
 
   assert.equal(result.sourceCount, 1);
   assert.equal(result.messageCount, 1);
+  assert.equal(result.audioMessageCount, 0);
   assert.deepEqual(result.sources, [
     {
       sourceId: '1001',
       title: 'Allowed Channel',
       messageCount: 1,
+      audioMessageCount: 0,
       lastSyncedMessageId: 2,
       incremental: false
     }
@@ -243,6 +245,8 @@ test('syncTelegramMessages stores audio-only messages for later transcription', 
   });
 
   assert.equal(result.messageCount, 1);
+  assert.equal(result.audioMessageCount, 1);
+  assert.equal(result.sources[0].audioMessageCount, 1);
   const messages = await store.findMessages({ sourceIds: ['1001'] });
   assert.equal(messages.length, 1);
   assert.equal(messages[0].media.kind, 'audio');

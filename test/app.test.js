@@ -292,8 +292,9 @@ test('admin sync route is protected and runs Telegram sync', async () => {
   });
   let disconnected = false;
   let syncArgs = null;
+  let transcriptionArgs = null;
   const app = createApp({
-    config: { ...testConfig(), appAuthToken: 'secret-token', telegramSyncLimit: 25 },
+    config: { ...testConfig(), appAuthToken: 'secret-token', telegramSyncLimit: 25, audioTranscriptionBatchSize: 1 },
     store,
     digestService: createTelegramDigestService(store),
     telegramAdmin: {
@@ -308,15 +309,29 @@ test('admin sync route is protected and runs Telegram sync', async () => {
         return {
           sourceCount: 1,
           messageCount: 2,
+          audioMessageCount: 1,
           sources: [
             {
               sourceId: 'chat-1',
               title: 'Project Chat',
               messageCount: 2,
+              audioMessageCount: 1,
               lastSyncedMessageId: 42,
               incremental: true
             }
           ]
+        };
+      }
+    },
+    audioTranscriptionAdmin: {
+      runOnce: async (args) => {
+        transcriptionArgs = args;
+        return {
+          processedCount: 1,
+          completed: 1,
+          failed: 0,
+          retryScheduled: 0,
+          results: [{ status: 'done', sourceId: 'chat-1', messageId: 42 }]
         };
       }
     }
@@ -347,9 +362,12 @@ test('admin sync route is protected and runs Telegram sync', async () => {
     assert.equal(authorized.status, 200);
     assert.equal(body.status, 'ok');
     assert.equal(body.messageCount, 2);
+    assert.equal(body.audioMessageCount, 1);
+    assert.equal(body.audioTranscription.completed, 1);
     assert.deepEqual(syncArgs.sourceIds, ['chat-1']);
     assert.equal(syncArgs.limit, 10);
     assert.equal(syncArgs.minDate.toISOString(), '2026-07-07T12:00:00.000Z');
+    assert.deepEqual(transcriptionArgs, { limit: 1, force: false });
     assert.equal(disconnected, true);
   } finally {
     server.close();

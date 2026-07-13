@@ -6,6 +6,7 @@ export function createTelegramSyncWorker({
   logger = console,
   createClient = createAuthorizedTelegramClient,
   syncMessages = syncTelegramMessages,
+  afterSync,
   setTimer = setTimeout,
   clearTimer = clearTimeout
 }) {
@@ -21,20 +22,31 @@ export function createTelegramSyncWorker({
 
     running = true;
     let client = null;
+    let result = null;
+    let failedResult = null;
     try {
       client = await createClient(config);
-      const result = await syncMessages({ client, store, config });
+      result = await syncMessages({ client, store, config });
       logger.info(`Telegram sync complete: ${result.messageCount} message(s) from ${result.sourceCount} source(s).`);
-      return result;
     } catch (error) {
       logger.warn(`Telegram sync skipped: ${error.message}`);
-      return { error: error.message };
+      failedResult = { error: error.message };
     } finally {
       running = false;
       if (client?.disconnect) {
         await client.disconnect();
       }
     }
+
+    if (result?.audioMessageCount > 0 && afterSync) {
+      try {
+        await afterSync(result);
+      } catch (error) {
+        logger.warn(`Post-sync audio transcription skipped: ${error.message}`);
+      }
+    }
+
+    return result || failedResult;
   }
 
   function scheduleNext(delaySeconds = config.telegramSyncIntervalSeconds) {

@@ -12,8 +12,16 @@ async function main() {
   const store = await createMongoStore(config);
   const digestService = createTelegramDigestService(store);
   const app = createApp({ config, store, digestService });
-  const syncWorker = startTelegramSyncWorker({ config, store });
   const audioTranscriptionWorker = startAudioTranscriptionWorker({ config, store });
+  const syncWorker = startTelegramSyncWorker({
+    config,
+    store,
+    afterSync: async () => {
+      await audioTranscriptionWorker.runOnce({
+        limit: config.audioTranscriptionBatchSize
+      });
+    }
+  });
   const slashBot = startTelegramSlashBot({ config, digestService });
 
   const server = app.listen(config.port, config.host, () => {

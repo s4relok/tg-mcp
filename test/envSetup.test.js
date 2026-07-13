@@ -31,6 +31,10 @@ test('setupEnvFile creates production env with generated auth token', async () =
   assert.equal(values.TELEGRAM_SESSION_FILE, '/srv/tg-mcp/shared/sessions/telegram.session');
   assert.equal(values.OPENAI_TRANSCRIPTION_ENABLED, 'false');
   assert.equal(values.OPENAI_TRANSCRIPTION_MODEL, 'gpt-4o-transcribe');
+  assert.equal(values.AUDIO_TRANSCRIPTION_SOURCE_IDS, '');
+  assert.equal(values.AUDIO_TRANSCRIPTION_SOURCE_TAGS, '');
+  assert.equal(values.AUDIO_TRANSCRIPTION_INTERVAL_SECONDS, '3600');
+  assert.equal(values.AUDIO_TRANSCRIPTION_BATCH_SIZE, '1');
   assert.equal(values.AUDIO_TRANSCRIPTION_WORK_DIR, '/srv/tg-mcp/shared/audio-work');
   assert.equal(values.APP_AUTH_TOKEN, 'fixed-token');
   assert.equal(values.ALLOW_UNAUTHENTICATED, 'false');

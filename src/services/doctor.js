@@ -137,10 +137,13 @@ function createNextSteps(checks, { envFile } = {}) {
   }
 
   if (openAiTranscription?.status === 'warning') {
+    const missingSourceFilter = openAiTranscription.details?.missingSourceFilter;
     addUniqueStep(steps, {
       id: 'configure_openai_transcription',
-      reason: 'Audio transcription is enabled but cannot run without an OpenAI API key.',
-      command: 'Set OPENAI_API_KEY or set OPENAI_TRANSCRIPTION_ENABLED=false, then restart the service.'
+      reason: openAiTranscription.message,
+      command: missingSourceFilter
+        ? 'Set AUDIO_TRANSCRIPTION_SOURCE_IDS=<source_id>[,<source_id>] or AUDIO_TRANSCRIPTION_SOURCE_TAGS=<tag>[,<tag>], then restart the service.'
+        : 'Set OPENAI_API_KEY or set OPENAI_TRANSCRIPTION_ENABLED=false, then restart the service.'
     });
   }
 
@@ -193,10 +196,23 @@ function openAiTranscriptionStatus(config) {
     return ok('openai_transcription', 'OpenAI audio transcription worker is disabled.');
   }
 
+  const sourceIds = config.audioTranscriptionSourceIds || [];
+  const sourceTags = config.audioTranscriptionSourceTags || [];
   if (!config.openAiApiKey) {
     return warn('openai_transcription', 'OPENAI_TRANSCRIPTION_ENABLED is true but OPENAI_API_KEY is empty.', {
       model: config.openAiTranscriptionModel,
-      workDir: config.audioTranscriptionWorkDir
+      workDir: config.audioTranscriptionWorkDir,
+      sourceIdCount: sourceIds.length,
+      sourceTagCount: sourceTags.length,
+      missingApiKey: true
+    });
+  }
+
+  if (!sourceIds.length && !sourceTags.length) {
+    return warn('openai_transcription', 'OPENAI_TRANSCRIPTION_ENABLED is true but no audio transcription sources are configured.', {
+      model: config.openAiTranscriptionModel,
+      workDir: config.audioTranscriptionWorkDir,
+      missingSourceFilter: true
     });
   }
 
@@ -204,7 +220,10 @@ function openAiTranscriptionStatus(config) {
     model: config.openAiTranscriptionModel,
     responseFormat: config.openAiTranscriptionResponseFormat,
     workDir: config.audioTranscriptionWorkDir,
-    batchSize: config.audioTranscriptionBatchSize
+    batchSize: config.audioTranscriptionBatchSize,
+    intervalSeconds: config.audioTranscriptionIntervalSeconds,
+    sourceIdCount: sourceIds.length,
+    sourceTagCount: sourceTags.length
   });
 }
 

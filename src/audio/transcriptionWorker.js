@@ -8,6 +8,59 @@ function retryDelayMs(attempts) {
   return Math.min(15 * 60 * 1000, 60 * 1000 * 2 ** Math.max(0, attempts - 1));
 }
 
+function normalizeList(values = []) {
+  const items = Array.isArray(values) ? values : [values];
+  return [...new Set(items.map((value) => String(value).trim()).filter(Boolean))];
+}
+
+function hasConfiguredTranscriptionSources(config) {
+  return normalizeList(config.audioTranscriptionSourceIds).length > 0 ||
+    normalizeList(config.audioTranscriptionSourceTags).length > 0;
+}
+
+function sourceFilterDescription(config) {
+  const sourceIds = normalizeList(config.audioTranscriptionSourceIds);
+  const tags = normalizeList(config.audioTranscriptionSourceTags);
+  const parts = [];
+  if (sourceIds.length) {
+    parts.push(`${sourceIds.length} source id(s)`);
+  }
+  if (tags.length) {
+    parts.push(`${tags.length} tag(s)`);
+  }
+  return parts.length ? parts.join(', ') : 'no configured transcription sources';
+}
+
+export async function resolveAudioTranscriptionSourceIds({ config, store, sourceIds = [] }) {
+  const explicitSourceIds = normalizeList(sourceIds);
+  if (explicitSourceIds.length) {
+    return {
+      sourceIds: explicitSourceIds,
+      configured: true,
+      explicit: true
+    };
+  }
+
+  const configuredSourceIds = normalizeList(config.audioTranscriptionSourceIds);
+  const configuredTags = normalizeList(config.audioTranscriptionSourceTags);
+  const resolved = new Set(configuredSourceIds);
+
+  if (configuredTags.length) {
+    const taggedSourceIds = await store.resolveSourceIds?.({
+      tags: configuredTags
+    });
+    for (const sourceId of taggedSourceIds || []) {
+      resolved.add(String(sourceId));
+    }
+  }
+
+  return {
+    sourceIds: [...resolved],
+    configured: configuredSourceIds.length > 0 || configuredTags.length > 0,
+    explicit: false
+  };
+}
+
 async function removeDownloadedFile(filePath, logger) {
   if (!filePath) {
     return;
@@ -140,10 +193,23 @@ export function createAudioTranscriptionWorker({
     const results = [];
     const batchSize = Math.max(1, limit || config.audioTranscriptionBatchSize || 1);
     try {
+      const resolvedSources = await resolveAudioTranscriptionSourceIds({ config, store, sourceIds });
+      if (!resolvedSources.sourceIds.length) {
+        const reason = resolvedSources.configured
+          ? 'no_matching_transcription_sources'
+          : 'no_transcription_sources';
+        return {
+          skipped: true,
+          reason,
+          processedCount: 0,
+          results: []
+        };
+      }
+
       const activeTranscriber = getTranscriber();
       for (let index = 0; index < batchSize; index += 1) {
         const job = await store.claimNextAudioTranscription({
-          sourceIds,
+          sourceIds: resolvedSources.sourceIds,
           lockMs: config.audioTranscriptionLockMs,
           now: now()
         });
@@ -178,6 +244,7 @@ export function createAudioTranscriptionWorker({
         completed,
         failed,
         retryScheduled,
+        sourceIds: resolvedSources.sourceIds,
         results
       };
     } catch (error) {
@@ -214,8 +281,15 @@ export function createAudioTranscriptionWorker({
         error: 'OPENAI_API_KEY is required for audio transcription'
       };
     }
+    if (!hasConfiguredTranscriptionSources(config)) {
+      logger.warn('OpenAI audio transcription worker is enabled but no transcription sources are configured. Set AUDIO_TRANSCRIPTION_SOURCE_IDS or AUDIO_TRANSCRIPTION_SOURCE_TAGS.');
+      return {
+        started: false,
+        reason: 'no_transcription_sources'
+      };
+    }
 
-    logger.info(`OpenAI audio transcription worker enabled every ${config.audioTranscriptionIntervalSeconds}s.`);
+    logger.info(`OpenAI audio transcription worker enabled every ${config.audioTranscriptionIntervalSeconds}s for ${sourceFilterDescription(config)}.`);
     if (config.audioTranscriptionOnStart) {
       queueMicrotask(async () => {
         await runOnce();

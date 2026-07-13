@@ -283,6 +283,7 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
 
   const enabledSources = sources.filter((source) => source.enabled);
   let messageCount = 0;
+  let audioMessageCount = 0;
   const perSource = [];
 
   for (const source of enabledSources) {
@@ -307,6 +308,9 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
       messages.push(normalized);
     }
 
+    const sourceAudioMessageCount = messages.filter(
+      (message) => message.media?.kind === 'audio' || message.media?.kind === 'voice'
+    ).length;
     await store.upsertMessages(messages);
     const maxMessageId = messages.reduce(
       (max, message) => Math.max(max, message.messageId),
@@ -317,10 +321,12 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
       messageCount: messages.length
     });
     messageCount += messages.length;
+    audioMessageCount += sourceAudioMessageCount;
     perSource.push({
       sourceId: source.sourceId,
       title: source.title,
       messageCount: messages.length,
+      audioMessageCount: sourceAudioMessageCount,
       lastSyncedMessageId: maxMessageId || null,
       incremental: Boolean(iterOptions.minId)
     });
@@ -329,6 +335,7 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
   return {
     sourceCount: enabledSources.length,
     messageCount,
+    audioMessageCount,
     sources: perSource
   };
 }
