@@ -116,6 +116,40 @@ test('normalizeTelegramMessage maps Telegram fields into storage shape', () => {
   assert.equal(message.raw.post, true);
 });
 
+test('normalizeTelegramMessage maps Telegram voice metadata into transcription queue fields', () => {
+  const source = normalizeTelegramSource(dialogs[0], { allowedSourceIds: ['1001'] });
+  const message = normalizeTelegramMessage(
+    {
+      id: 43,
+      date: 1783620000,
+      message: '',
+      voice: {
+        id: { toString: () => '555' },
+        accessHash: { toString: () => '777' },
+        mimeType: 'audio/ogg',
+        size: 123456,
+        dcId: 2,
+        attributes: [
+          { className: 'DocumentAttributeAudio', duration: 900 },
+          { className: 'DocumentAttributeFilename', fileName: 'conversation.ogg' }
+        ]
+      }
+    },
+    source
+  );
+
+  assert.equal(message.text, '');
+  assert.equal(message.media.kind, 'voice');
+  assert.equal(message.media.mimeType, 'audio/ogg');
+  assert.equal(message.media.durationSec, 900);
+  assert.equal(message.media.fileName, 'conversation.ogg');
+  assert.equal(message.media.documentId, '555');
+  assert.deepEqual(message.transcription, {
+    status: 'pending',
+    attempts: 0
+  });
+});
+
 test('listTelegramSources applies allowed source ids', async () => {
   const client = new FakeTelegramClient({ dialogs, messagesBySource: {} });
   const sources = await listTelegramSources({ client, allowedSourceIds: ['1001'] });
@@ -174,6 +208,45 @@ test('syncTelegramMessages stores only whitelisted sources and honors minDate', 
   const [source] = await store.listSources({ includeDisabled: true, sourceIds: ['1001'] });
   assert.equal(source.lastSyncedMessageId, 2);
   assert.equal(source.lastSyncMessageCount, 1);
+});
+
+test('syncTelegramMessages stores audio-only messages for later transcription', async () => {
+  const client = new FakeTelegramClient({
+    dialogs,
+    messagesBySource: {
+      1001: [
+        {
+          id: 10,
+          date: 1783620000,
+          message: '',
+          audio: {
+            id: { toString: () => 'audio-doc' },
+            mimeType: 'audio/mpeg',
+            size: 3000,
+            attributes: [
+              { className: 'DocumentAttributeAudio', duration: 120, title: 'Planning call' }
+            ]
+          }
+        }
+      ]
+    }
+  });
+  const store = new MemoryTelegramStore();
+
+  const result = await syncTelegramMessages({
+    client,
+    store,
+    config: {
+      allowedSourceIds: ['1001'],
+      telegramSyncLimit: 50
+    }
+  });
+
+  assert.equal(result.messageCount, 1);
+  const messages = await store.findMessages({ sourceIds: ['1001'] });
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].media.kind, 'audio');
+  assert.equal(messages[0].transcription.status, 'pending');
 });
 
 test('refreshTelegramSources preserves existing DB selection and tags', async () => {

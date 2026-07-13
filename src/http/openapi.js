@@ -82,6 +82,16 @@ export function createOpenApiDocument(config) {
           responses: endpointResponses('Telegram source sync status.')
         }
       },
+      [`${api}/transcriptions/status`]: {
+        get: {
+          operationId: 'getAudioTranscriptionStatus',
+          summary: 'Get Telegram audio transcription status',
+          parameters: [
+            ...sourceFilterParameters
+          ],
+          responses: endpointResponses('Telegram audio transcription status.')
+        }
+      },
       [`${api}/digest/daily`]: {
         get: {
           operationId: 'getDailyDigest',

@@ -68,13 +68,165 @@ export class MemoryTelegramStore {
       );
       const normalized = { ...message, date: new Date(message.date) };
       if (index >= 0) {
-        this.messages[index] = { ...this.messages[index], ...normalized };
+        const existing = this.messages[index];
+        this.messages[index] = {
+          ...existing,
+          ...normalized,
+          transcriptText: existing.transcriptText || normalized.transcriptText || '',
+          transcription: existing.transcription || normalized.transcription
+        };
       } else {
         this.messages.push(normalized);
       }
     }
 
     return { insertedOrUpdated: messages.length };
+  }
+
+  async claimNextAudioTranscription({ sourceIds = [], lockMs = 10 * 60 * 1000, now = new Date() } = {}) {
+    const candidate = this.messages
+      .filter((message) => ['audio', 'voice'].includes(message.media?.kind))
+      .filter((message) => !sourceIds.length || sourceIds.includes(message.sourceId))
+      .filter((message) => !message.transcriptText)
+      .filter((message) => (
+        (
+          message.transcription?.status === 'pending' &&
+          (
+            !message.transcription?.nextAttemptAt ||
+            new Date(message.transcription.nextAttemptAt) <= now
+          )
+        ) ||
+        (
+          message.transcription?.status === 'processing' &&
+          message.transcription?.lockUntil &&
+          new Date(message.transcription.lockUntil) <= now
+        )
+      ))
+      .sort((a, b) => b.date - a.date)[0];
+
+    if (!candidate) {
+      return null;
+    }
+
+    candidate.transcription = {
+      ...(candidate.transcription || {}),
+      status: 'processing',
+      attempts: (candidate.transcription?.attempts || 0) + 1,
+      startedAt: now,
+      lockUntil: new Date(now.getTime() + lockMs),
+      updatedAt: now
+    };
+    return { ...candidate };
+  }
+
+  async completeAudioTranscription({
+    sourceId,
+    messageId,
+    transcriptText,
+    model,
+    responseFormat,
+    usage = null,
+    language = null,
+    duration = null,
+    segments = [],
+    chunks = [],
+    now = new Date()
+  }) {
+    const message = this.messages.find((item) => item.sourceId === sourceId && item.messageId === messageId);
+    if (!message) {
+      return null;
+    }
+
+    message.transcriptText = transcriptText;
+    message.transcription = {
+      ...(message.transcription || {}),
+      status: 'done',
+      model: model || null,
+      responseFormat: responseFormat || null,
+      usage,
+      language,
+      duration,
+      segments,
+      chunks,
+      completedAt: now,
+      updatedAt: now
+    };
+    delete message.transcription.lockUntil;
+    delete message.transcription.error;
+    delete message.transcription.nextAttemptAt;
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (source) {
+      source.updatedAt = now;
+    }
+    return { ...message };
+  }
+
+  async failAudioTranscription({ sourceId, messageId, error, status = 'failed', nextAttemptAt = null, now = new Date() }) {
+    const message = this.messages.find((item) => item.sourceId === sourceId && item.messageId === messageId);
+    if (!message) {
+      return null;
+    }
+
+    message.transcription = {
+      ...(message.transcription || {}),
+      status,
+      error: String(error?.message || error || 'Transcription failed'),
+      failedAt: now,
+      updatedAt: now
+    };
+    if (nextAttemptAt) {
+      message.transcription.nextAttemptAt = nextAttemptAt;
+    } else {
+      delete message.transcription.nextAttemptAt;
+    }
+    delete message.transcription.lockUntil;
+    return { ...message };
+  }
+
+  async resetFailedAudioTranscriptions({ sourceIds = [], limit = 100, now = new Date() } = {}) {
+    const candidates = this.messages
+      .filter((message) => ['audio', 'voice'].includes(message.media?.kind))
+      .filter((message) => !sourceIds.length || sourceIds.includes(message.sourceId))
+      .filter((message) => message.transcription?.status === 'failed')
+      .sort((a, b) => b.date - a.date)
+      .slice(0, Math.min(limit, 500));
+
+    for (const message of candidates) {
+      message.transcription = {
+        ...(message.transcription || {}),
+        status: 'pending',
+        attempts: 0,
+        updatedAt: now
+      };
+      delete message.transcription.error;
+      delete message.transcription.failedAt;
+      delete message.transcription.lockUntil;
+      delete message.transcription.nextAttemptAt;
+    }
+
+    return { resetCount: candidates.length };
+  }
+
+  async getAudioTranscriptionStatus({ sourceIds = [] } = {}) {
+    const counts = {
+      pending: 0,
+      processing: 0,
+      done: 0,
+      failed: 0,
+      missing: 0
+    };
+    for (const message of this.messages) {
+      if (!['audio', 'voice'].includes(message.media?.kind)) {
+        continue;
+      }
+      if (sourceIds.length && !sourceIds.includes(message.sourceId)) {
+        continue;
+      }
+      counts[message.transcription?.status || 'missing'] += 1;
+    }
+
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    return { total, counts };
   }
 
   async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {
@@ -121,7 +273,7 @@ export class MemoryTelegramStore {
       .filter((message) => resolvedSourceIds.includes(message.sourceId))
       .filter((message) => !fromDate || message.date >= fromDate)
       .filter((message) => !toDate || message.date < toDate)
-      .filter((message) => !lowerQuery || `${message.text || ''} ${message.senderName || ''} ${message.link || ''}`.toLowerCase().includes(lowerQuery))
+      .filter((message) => !lowerQuery || `${message.text || ''} ${message.transcriptText || ''} ${message.senderName || ''} ${message.link || ''}`.toLowerCase().includes(lowerQuery))
       .sort((a, b) => sort === 'asc' ? a.date - b.date : b.date - a.date)
       .slice(0, Math.min(limit, 500));
   }

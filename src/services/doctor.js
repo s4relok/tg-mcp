@@ -75,6 +75,7 @@ function createNextSteps(checks, { envFile } = {}) {
   const telegramAuth = findCheck(checks, 'telegram_auth');
   const telegramSources = findCheck(checks, 'telegram_sources');
   const telegramBot = findCheck(checks, 'telegram_bot');
+  const openAiTranscription = findCheck(checks, 'openai_transcription');
 
   if (mongodb?.status === 'error') {
     addUniqueStep(steps, {
@@ -135,6 +136,14 @@ function createNextSteps(checks, { envFile } = {}) {
     });
   }
 
+  if (openAiTranscription?.status === 'warning') {
+    addUniqueStep(steps, {
+      id: 'configure_openai_transcription',
+      reason: 'Audio transcription is enabled but cannot run without an OpenAI API key.',
+      command: 'Set OPENAI_API_KEY or set OPENAI_TRANSCRIPTION_ENABLED=false, then restart the service.'
+    });
+  }
+
   if (!steps.length) {
     steps.push({
       id: 'deploy_or_connect',
@@ -177,6 +186,26 @@ function appAuthStatus(config) {
   }
 
   return warn('app_auth', 'APP_AUTH_TOKEN is not configured. Public MCP/REST exposure would be unauthenticated.');
+}
+
+function openAiTranscriptionStatus(config) {
+  if (!config.openAiTranscriptionEnabled) {
+    return ok('openai_transcription', 'OpenAI audio transcription worker is disabled.');
+  }
+
+  if (!config.openAiApiKey) {
+    return warn('openai_transcription', 'OPENAI_TRANSCRIPTION_ENABLED is true but OPENAI_API_KEY is empty.', {
+      model: config.openAiTranscriptionModel,
+      workDir: config.audioTranscriptionWorkDir
+    });
+  }
+
+  return ok('openai_transcription', 'OpenAI audio transcription worker is configured.', {
+    model: config.openAiTranscriptionModel,
+    responseFormat: config.openAiTranscriptionResponseFormat,
+    workDir: config.audioTranscriptionWorkDir,
+    batchSize: config.audioTranscriptionBatchSize
+  });
 }
 
 export async function createReadinessReport({
@@ -224,6 +253,7 @@ export async function createReadinessReport({
     : warn('telegram_credentials', 'TELEGRAM_API_ID and TELEGRAM_API_HASH are not fully configured.'));
 
   checks.push(telegramBotStatus(config));
+  checks.push(openAiTranscriptionStatus(config));
 
   checks.push(await sessionFileStatus(config.telegramSessionFile));
 

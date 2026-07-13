@@ -134,3 +134,7 @@ export function parseSyncStatusQuery(query) {
     ...sourceFilters(query)
   };
 }
+
+export function parseAudioTranscriptionStatusQuery(query) {
+  return sourceFilters(query);
+}

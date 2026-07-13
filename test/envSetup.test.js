@@ -29,6 +29,9 @@ test('setupEnvFile creates production env with generated auth token', async () =
   assert.equal(JSON.stringify(result).includes('fixed-token'), false);
   assert.equal(values.NODE_ENV, 'production');
   assert.equal(values.TELEGRAM_SESSION_FILE, '/srv/tg-mcp/shared/sessions/telegram.session');
+  assert.equal(values.OPENAI_TRANSCRIPTION_ENABLED, 'false');
+  assert.equal(values.OPENAI_TRANSCRIPTION_MODEL, 'gpt-4o-transcribe');
+  assert.equal(values.AUDIO_TRANSCRIPTION_WORK_DIR, '/srv/tg-mcp/shared/audio-work');
   assert.equal(values.APP_AUTH_TOKEN, 'fixed-token');
   assert.equal(values.ALLOW_UNAUTHENTICATED, 'false');
 });
@@ -40,6 +43,7 @@ test('setupEnvFile preserves existing protected secrets when force is used', asy
     'NODE_ENV=development',
     'TELEGRAM_API_ID=123',
     'TELEGRAM_API_HASH=hash',
+    'OPENAI_API_KEY=keep-openai-key',
     'APP_AUTH_TOKEN=keep-token',
     ''
   ].join('\n'));
@@ -59,6 +63,7 @@ test('setupEnvFile preserves existing protected secrets when force is used', asy
   assert.equal(values.NODE_ENV, 'production');
   assert.equal(values.TELEGRAM_API_ID, '123');
   assert.equal(values.TELEGRAM_API_HASH, 'hash');
+  assert.equal(values.OPENAI_API_KEY, 'keep-openai-key');
   assert.equal(values.APP_AUTH_TOKEN, 'keep-token');
   assert.equal(backup.NODE_ENV, 'development');
 });

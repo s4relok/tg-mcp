@@ -70,6 +70,7 @@ test('OpenAPI endpoint exposes REST fallback schema', async () => {
     assert.ok(body.paths['/tg-mcp/api/digest/daily']);
     assert.ok(body.paths['/tg-mcp/api/search']);
     assert.ok(body.paths['/tg-mcp/api/sync/status']);
+    assert.ok(body.paths['/tg-mcp/api/transcriptions/status']);
     assert.ok(body.paths['/tg-mcp/api/search'].get.responses[400]);
   } finally {
     server.close();
@@ -113,6 +114,9 @@ test('REST fallback endpoints expose digest service data', async () => {
     const syncStatus = await (await fetch(`${baseUrl}/sync/status?sourceQuery=project`)).json();
     assert.equal(syncStatus.status, 'never_synced');
     assert.equal(syncStatus.sources[0].sourceId, 'chat-1');
+
+    const transcriptionStatus = await (await fetch(`${baseUrl}/transcriptions/status?sourceQuery=project`)).json();
+    assert.equal(transcriptionStatus.total, 0);
 
     const digest = await (await fetch(`${baseUrl}/digest/daily?date=2026-07-09&timezone=UTC&timelineLimit=1&sourceQuery=project`)).json();
     assert.equal(digest.messageCount, 2);
@@ -352,6 +356,90 @@ test('admin sync route is protected and runs Telegram sync', async () => {
   }
 });
 
+test('admin transcription routes report status, run worker, and retry failed jobs', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'saved', title: 'Saved Messages', enabled: true, tags: [] }],
+    messages: [
+      {
+        sourceId: 'saved',
+        messageId: 1,
+        date: '2026-07-09T09:00:00.000Z',
+        text: '',
+        transcriptText: '',
+        media: { kind: 'voice', mimeType: 'audio/ogg', durationSec: 60 },
+        transcription: { status: 'pending', attempts: 0 }
+      },
+      {
+        sourceId: 'saved',
+        messageId: 2,
+        date: '2026-07-09T10:00:00.000Z',
+        text: '',
+        transcriptText: '',
+        media: { kind: 'audio', mimeType: 'audio/mpeg', durationSec: 120 },
+        transcription: { status: 'failed', attempts: 3, error: 'bad file' }
+      }
+    ]
+  });
+  let runArgs = null;
+  const app = createApp({
+    config: { ...testConfig(), appAuthToken: 'secret-token' },
+    store,
+    digestService: createTelegramDigestService(store),
+    audioTranscriptionAdmin: {
+      runOnce: async (args) => {
+        runArgs = args;
+        return {
+          processedCount: 1,
+          completed: 1,
+          failed: 0,
+          retryScheduled: 0,
+          results: [{ status: 'done', sourceId: 'saved', messageId: 1 }]
+        };
+      }
+    }
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const base = `http://127.0.0.1:${port}/admin/transcriptions`;
+    const headers = {
+      Authorization: 'Bearer secret-token',
+      'Content-Type': 'application/json'
+    };
+
+    const unauthorized = await fetch(`${base}/status`);
+    assert.equal(unauthorized.status, 401);
+
+    const status = await (await fetch(`${base}/status`, { headers })).json();
+    assert.equal(status.total, 2);
+    assert.equal(status.counts.pending, 1);
+    assert.equal(status.counts.failed, 1);
+
+    const run = await fetch(`${base}/run`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ sourceIds: ['saved'], limit: 1 })
+    });
+    const runBody = await run.json();
+    assert.equal(run.status, 200);
+    assert.equal(runBody.status, 'ok');
+    assert.deepEqual(runArgs.sourceIds, ['saved']);
+    assert.equal(runArgs.limit, 1);
+
+    const retry = await fetch(`${base}/retry-failed`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ sourceIds: ['saved'], limit: 10 })
+    });
+    const retryBody = await retry.json();
+    assert.equal(retry.status, 200);
+    assert.equal(retryBody.resetCount, 1);
+  } finally {
+    server.close();
+  }
+});
+
 test('admin source refresh route is protected and disconnects Telegram client', async () => {
   const store = new MemoryTelegramStore();
   let disconnected = false;
@@ -517,6 +605,7 @@ test('MCP endpoint exposes Telegram tools', async () => {
 
     assert.ok(names.includes('get_daily_digest'));
     assert.ok(names.includes('get_sync_status'));
+    assert.ok(names.includes('get_audio_transcription_status'));
     assert.ok(names.includes('get_source_summary'));
     assert.ok(names.includes('search_telegram_messages'));
 

@@ -1,5 +1,6 @@
 import {
   parseActionItemsQuery,
+  parseAudioTranscriptionStatusQuery,
   parseDailyDigestQuery,
   parseMessageContextQuery,
   parsePeriodSummaryQuery,
@@ -28,6 +29,10 @@ export function registerApiRoutes(app, { config, digestService, auth }) {
 
   app.get(`${basePath}/sync/status`, auth, asyncHandler(async (req, res) => {
     res.json(await digestService.getSyncStatus(parseSyncStatusQuery(req.query)));
+  }));
+
+  app.get(`${basePath}/transcriptions/status`, auth, asyncHandler(async (req, res) => {
+    res.json(await digestService.getAudioTranscriptionStatus(parseAudioTranscriptionStatusQuery(req.query)));
   }));
 
   app.get(`${basePath}/digest/daily`, auth, asyncHandler(async (req, res) => {

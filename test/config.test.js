@@ -16,6 +16,10 @@ test('loadConfigFromProcessEnv reads an explicit env file with process env prece
     'TELEGRAM_API_ID=123',
     'TELEGRAM_API_HASH=hash',
     'TELEGRAM_SESSION_FILE=/srv/tg-mcp/shared/sessions/telegram.session',
+    'OPENAI_API_KEY=file-openai-key',
+    'OPENAI_TRANSCRIPTION_ENABLED=true',
+    'OPENAI_TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe',
+    'AUDIO_TRANSCRIPTION_BATCH_SIZE=2',
     ''
   ].join('\n'));
 
@@ -25,7 +29,11 @@ test('loadConfigFromProcessEnv reads an explicit env file with process env prece
     'APP_AUTH_TOKEN',
     'TELEGRAM_API_ID',
     'TELEGRAM_API_HASH',
-    'TELEGRAM_SESSION_FILE'
+    'TELEGRAM_SESSION_FILE',
+    'OPENAI_API_KEY',
+    'OPENAI_TRANSCRIPTION_ENABLED',
+    'OPENAI_TRANSCRIPTION_MODEL',
+    'AUDIO_TRANSCRIPTION_BATCH_SIZE'
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
@@ -42,6 +50,10 @@ test('loadConfigFromProcessEnv reads an explicit env file with process env prece
     assert.equal(config.appAuthToken, 'file-token');
     assert.equal(config.telegramApiId, '123');
     assert.equal(config.telegramSessionFile, '/srv/tg-mcp/shared/sessions/telegram.session');
+    assert.equal(config.openAiApiKey, 'file-openai-key');
+    assert.equal(config.openAiTranscriptionEnabled, true);
+    assert.equal(config.openAiTranscriptionModel, 'gpt-4o-mini-transcribe');
+    assert.equal(config.audioTranscriptionBatchSize, 2);
   } finally {
     for (const key of keys) {
       if (previous[key] === undefined) {

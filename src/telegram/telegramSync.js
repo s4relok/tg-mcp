@@ -51,6 +51,66 @@ function secondsToDate(value) {
   return new Date(value * 1000);
 }
 
+function toStringId(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value.toString === 'function') {
+    return value.toString();
+  }
+  return String(value);
+}
+
+function toNumberOrNull(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function telegramClassName(value) {
+  return value?.className || value?.constructor?.name || '';
+}
+
+function documentAttribute(document, expectedClassName) {
+  return (document?.attributes || []).find((attribute) => telegramClassName(attribute) === expectedClassName) || null;
+}
+
+function telegramDocumentFileName(document) {
+  const fileNameAttribute = documentAttribute(document, 'DocumentAttributeFilename');
+  return fileNameAttribute?.fileName || fileNameAttribute?.file_name || null;
+}
+
+function telegramAudioAttribute(document) {
+  return documentAttribute(document, 'DocumentAttributeAudio');
+}
+
+export function normalizeTelegramMedia(message) {
+  const voiceDocument = message.voice || null;
+  const audioDocument = message.audio || null;
+  const document = voiceDocument || audioDocument;
+  if (!document) {
+    return null;
+  }
+
+  const audioAttribute = telegramAudioAttribute(document);
+  const fileName = telegramDocumentFileName(document);
+
+  return {
+    kind: voiceDocument ? 'voice' : 'audio',
+    mimeType: document.mimeType || document.mime_type || null,
+    size: toNumberOrNull(document.size),
+    durationSec: toNumberOrNull(audioAttribute?.duration),
+    fileName,
+    title: audioAttribute?.title || null,
+    performer: audioAttribute?.performer || null,
+    documentId: toStringId(document.id),
+    dcId: toNumberOrNull(document.dcId || document.dc_id)
+  };
+}
+
 export function normalizeTelegramSource(dialog, { allowedSourceIds = [] } = {}) {
   const entity = dialog.entity || dialog;
   const sourceId = telegramEntityId(entity);
@@ -67,7 +127,8 @@ export function normalizeTelegramSource(dialog, { allowedSourceIds = [] } = {}) 
 }
 
 export function normalizeTelegramMessage(message, source) {
-  return {
+  const media = normalizeTelegramMedia(message);
+  const normalized = {
     sourceId: source.sourceId,
     sourceTitle: source.title,
     messageId: message.id,
@@ -75,6 +136,7 @@ export function normalizeTelegramMessage(message, source) {
     senderId: message.senderId ? message.senderId.toString() : null,
     senderName: null,
     text: message.message || '',
+    transcriptText: '',
     replyToMessageId: message.replyTo?.replyToMsgId || null,
     views: message.views || null,
     link: messageLink(source, message.id),
@@ -84,6 +146,20 @@ export function normalizeTelegramMessage(message, source) {
       post: Boolean(message.post)
     }
   };
+
+  if (media) {
+    normalized.media = media;
+    normalized.transcription = {
+      status: 'pending',
+      attempts: 0
+    };
+  }
+
+  return normalized;
+}
+
+function hasSyncableMessageContent(message) {
+  return Boolean(message.message || normalizeTelegramMedia(message));
 }
 
 export async function createTelegramClient(config, prompts) {
@@ -219,7 +295,7 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
     }
 
     for await (const message of client.iterMessages(source.sourceId, iterOptions)) {
-      if (!message.message) {
+      if (!hasSyncableMessageContent(message)) {
         continue;
       }
 

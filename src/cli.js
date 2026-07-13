@@ -6,6 +6,7 @@ import { createReadinessReport } from './services/doctor.js';
 import { setupEnvFile } from './services/envSetup.js';
 import { findSourcesForSelection, selectSource } from './services/sourceAdmin.js';
 import { createMongoStore } from './storage/mongoStore.js';
+import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import {
   createTelegramClient,
   createTelegramLoginReport,
@@ -28,6 +29,9 @@ function usage() {
   npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG] [--env-path PATH]
   npm run cli -- sync [--limit N] [--source-id ID] [--env-path PATH]
   npm run cli -- backfill --days N [--env-path PATH]
+  npm run cli -- transcribe-audio [--limit N] [--source-id ID] [--env-path PATH]
+  npm run cli -- transcription-status [--source-id ID] [--env-path PATH]
+  npm run cli -- retry-failed-transcriptions [--limit N] [--source-id ID] [--env-path PATH]
   npm run cli -- doctor [--telegram] [--env-path PATH]
 `);
 }
@@ -334,6 +338,40 @@ async function main() {
         minDate: minDateFromDays(options.days)
       }));
       console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (command === 'transcription-status') {
+      const result = await store.getAudioTranscriptionStatus({
+        sourceIds: options.sourceIds
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (command === 'retry-failed-transcriptions') {
+      const result = await store.resetFailedAudioTranscriptions({
+        sourceIds: options.sourceIds,
+        limit: options.limit
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (command === 'transcribe-audio') {
+      const worker = createAudioTranscriptionWorker({
+        config,
+        store
+      });
+      const result = await worker.runOnce({
+        sourceIds: options.sourceIds,
+        limit: options.limit,
+        force: true
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.error) {
+        process.exitCode = 1;
+      }
       return;
     }
 

@@ -8,6 +8,7 @@ import { BadRequestError, isHttpError } from './http/errors.js';
 import { registerApiRoutes } from './http/apiRoutes.js';
 import { requireAppToken } from './http/auth.js';
 import { createOpenApiDocument } from './http/openapi.js';
+import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramMcpServer } from './mcp/server.js';
 import { createReadinessReport } from './services/doctor.js';
 import { selectSource } from './services/sourceAdmin.js';
@@ -78,7 +79,7 @@ function jsonRpcError(res, status, message) {
   });
 }
 
-export function createApp({ config, store, digestService, telegramAdmin = {} }) {
+export function createApp({ config, store, digestService, telegramAdmin = {}, audioTranscriptionAdmin = {} }) {
   const app = createMcpExpressApp({
     host: config.host,
     allowedHosts: config.allowedHosts
@@ -90,6 +91,19 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
   const syncMessages = telegramAdmin.syncMessages || syncTelegramMessages;
   const now = telegramAdmin.now || (() => new Date());
   const allowRequest = (_req, _res, next) => next();
+  const runAudioTranscriptions = audioTranscriptionAdmin.runOnce || (async (args = {}) => {
+    const worker = createAudioTranscriptionWorker({
+      config,
+      store,
+      logger: audioTranscriptionAdmin.logger || console,
+      createClient: audioTranscriptionAdmin.createClient || createTelegramClient,
+      createTranscriber: audioTranscriptionAdmin.createTranscriber,
+      getMessage: audioTranscriptionAdmin.getMessage,
+      downloadAudio: audioTranscriptionAdmin.downloadAudio,
+      now: audioTranscriptionAdmin.now || now
+    });
+    return worker.runOnce({ ...args, force: true });
+  });
 
   app.get('/health', async (_req, res) => {
     try {
@@ -259,6 +273,47 @@ export function createApp({ config, store, digestService, telegramAdmin = {} }) 
       if (client?.disconnect) {
         await client.disconnect();
       }
+    }
+  });
+
+  app.get('/admin/transcriptions/status', auth, async (req, res, next) => {
+    try {
+      res.json(await store.getAudioTranscriptionStatus({
+        sourceIds: toArray(req.query.sourceIds ?? req.query.sourceId)
+      }));
+    } catch (caught) {
+      next(caught);
+    }
+  });
+
+  app.post('/admin/transcriptions/run', auth, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const result = await runAudioTranscriptions({
+        sourceIds: toArray(body.sourceIds ?? body.sourceId),
+        limit: toPositiveInteger(body.limit)
+      });
+      res.json({
+        status: result.error ? 'error' : 'ok',
+        ...result
+      });
+    } catch (caught) {
+      next(caught);
+    }
+  });
+
+  app.post('/admin/transcriptions/retry-failed', auth, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      res.json({
+        status: 'ok',
+        ...(await store.resetFailedAudioTranscriptions({
+          sourceIds: toArray(body.sourceIds ?? body.sourceId),
+          limit: toPositiveInteger(body.limit)
+        }))
+      });
+    } catch (caught) {
+      next(caught);
     }
   });
 

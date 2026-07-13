@@ -11,6 +11,7 @@ Read-only Telegram digest MCP server that logs into a Telegram user account and 
 - REST/OpenAPI fallback under `/tg-mcp/api` and `/tg-mcp/openapi.json`.
 - MongoDB storage.
 - GramJS-based Telegram user account sync CLI.
+- Optional OpenAI Audio Transcriptions pipeline for Telegram voice/audio messages.
 - Optional read-only Telegram slash bot.
 - MCP prompts:
   - `daily_telegram_digest`
@@ -18,6 +19,7 @@ Read-only Telegram digest MCP server that logs into a Telegram user account and 
 - Read-only MCP tools:
   - `list_sources`
   - `get_sync_status`
+  - `get_audio_transcription_status`
   - `get_daily_digest`
   - `get_period_summary`
   - `search_telegram_messages`
@@ -45,6 +47,7 @@ REST/OpenAPI fallback:
 ```bash
 curl http://127.0.0.1:3010/tg-mcp/openapi.json
 curl "http://127.0.0.1:3010/tg-mcp/api/sync/status"
+curl "http://127.0.0.1:3010/tg-mcp/api/transcriptions/status"
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?timelineLimit=80"
 curl "http://127.0.0.1:3010/tg-mcp/api/sources/<sourceId>/summary?date=2026-07-09"
 curl "http://127.0.0.1:3010/tg-mcp/api/digest/daily?sourceQuery=project"
@@ -125,6 +128,9 @@ npm run cli -- enable-source <id> --tag work
 npm run cli -- db-sources --include-disabled
 npm run cli -- sync --source-id <id> --limit 100
 npm run cli -- backfill --days 7 --limit 1000
+npm run cli -- transcription-status --source-id <id>
+npm run cli -- transcribe-audio --source-id <id> --limit 1
+npm run cli -- retry-failed-transcriptions --source-id <id> --limit 10
 ```
 
 Alternatively, put selected source ids into `ALLOWED_SOURCE_IDS`; env selection overrides DB-enabled sources during sync.
@@ -185,6 +191,49 @@ curl "http://127.0.0.1:3010/tg-mcp/api/sync/status?staleAfterHours=24"
 ```
 
 The MCP tool `get_sync_status` exposes the same source freshness state to ChatGPT so it can say when data is missing or stale before summarizing.
+
+## Audio transcription
+
+Telegram voice notes and audio files are synced as messages even when they do not have a text caption. The sync stores audio metadata in MongoDB and queues them with `transcription.status=pending`. Once transcribed, the transcript is stored as `transcriptText` on the same `tg_messages` document, included in Mongo text search, message context, daily digests, and action detection.
+
+Enable the OpenAI Audio Transcriptions worker:
+
+```text
+OPENAI_API_KEY=<openai_api_key>
+OPENAI_TRANSCRIPTION_ENABLED=true
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-transcribe
+AUDIO_TRANSCRIPTION_WORK_DIR=/srv/tg-mcp/shared/audio-work
+```
+
+The worker downloads Telegram media into the work directory, submits it to the OpenAI Audio Transcriptions API, stores only the transcript/metadata by default, and removes the temporary audio file. Files larger than `AUDIO_TRANSCRIPTION_MAX_FILE_BYTES` are split with `ffmpeg` when `AUDIO_TRANSCRIPTION_SPLIT_LARGE_FILES=true`.
+
+Manual operations:
+
+```bash
+npm run cli -- transcription-status
+npm run cli -- transcribe-audio --limit 1
+npm run cli -- transcribe-audio --source-id <saved_messages_source_id> --limit 1
+npm run cli -- retry-failed-transcriptions --limit 10
+```
+
+Authenticated admin endpoints:
+
+```bash
+curl http://127.0.0.1:3010/admin/transcriptions/status \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>"
+
+curl -X POST http://127.0.0.1:3010/admin/transcriptions/run \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceIds":["<saved_messages_source_id>"],"limit":1}'
+
+curl -X POST http://127.0.0.1:3010/admin/transcriptions/retry-failed \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"limit":10}'
+```
+
+The read-only REST endpoint `/tg-mcp/api/transcriptions/status` and MCP tool `get_audio_transcription_status` expose counts for selected sources. Search and digest tools automatically use completed transcripts.
 
 ## Digest cache
 

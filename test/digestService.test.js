@@ -299,6 +299,86 @@ test('searchMessages can filter by source query', async () => {
   assert.equal(result.results[0].sourceId, 'chat-1');
 });
 
+test('searchMessages and digests use completed audio transcripts', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Saved Messages', type: 'User', enabled: true, tags: ['saved'] }],
+    messages: [
+      {
+        sourceId: 'chat-1',
+        sourceTitle: 'Saved Messages',
+        messageId: 99,
+        date: '2026-07-09T09:00:00.000Z',
+        text: '',
+        transcriptText: 'Decision: prepare the audio transcription pipeline today?',
+        media: {
+          kind: 'voice',
+          mimeType: 'audio/ogg',
+          durationSec: 900
+        },
+        transcription: {
+          status: 'done'
+        }
+      }
+    ]
+  });
+  const service = createTelegramDigestService(store);
+
+  const search = await service.searchMessages({ query: 'pipeline' });
+  assert.equal(search.count, 1);
+  assert.equal(search.results[0].text, 'Decision: prepare the audio transcription pipeline today?');
+  assert.equal(search.results[0].media.kind, 'voice');
+  assert.equal(search.results[0].transcriptionStatus, 'done');
+
+  const digest = await service.getDailyDigest({ date: '2026-07-09', timezone: 'UTC' });
+  assert.equal(digest.messageCount, 1);
+  assert.equal(digest.decisions.length, 1);
+  assert.equal(digest.questions.length, 1);
+
+  const status = await service.getAudioTranscriptionStatus({ tags: ['saved'] });
+  assert.deepEqual(status.counts, {
+    pending: 0,
+    processing: 0,
+    done: 1,
+    failed: 0,
+    missing: 0
+  });
+});
+
+test('completed transcript invalidates cached digest through source updatedAt', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'chat-1', title: 'Saved Messages', type: 'User', enabled: true, tags: [] }],
+    messages: [
+      {
+        sourceId: 'chat-1',
+        sourceTitle: 'Saved Messages',
+        messageId: 10,
+        date: '2026-07-09T09:00:00.000Z',
+        text: '',
+        transcriptText: '',
+        media: { kind: 'voice', mimeType: 'audio/ogg', durationSec: 60 },
+        transcription: { status: 'processing', attempts: 1 }
+      }
+    ]
+  });
+  const service = createTelegramDigestService(store);
+
+  const before = await service.getDailyDigest({ date: '2026-07-09', timezone: 'UTC' });
+  await store.completeAudioTranscription({
+    sourceId: 'chat-1',
+    messageId: 10,
+    transcriptText: 'Decision: transcript is now searchable.',
+    model: 'gpt-4o-transcribe',
+    responseFormat: 'json',
+    now: new Date('2026-07-09T10:00:00.000Z')
+  });
+  const after = await service.getDailyDigest({ date: '2026-07-09', timezone: 'UTC' });
+
+  assert.equal(before.cached, false);
+  assert.equal(after.cached, false);
+  assert.notEqual(before.cacheKey, after.cacheKey);
+  assert.equal(after.decisions.length, 1);
+});
+
 test('getMessageContext returns surrounding messages', async () => {
   const service = createFixtureService();
   const result = await service.getMessageContext({

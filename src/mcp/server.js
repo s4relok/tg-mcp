@@ -59,6 +59,7 @@ function registerTelegramPrompts(server) {
       [
         'Create a concise Telegram digest for the selected chats/channels.',
         'First call get_sync_status with the same filters. If data is missing, never synced, or stale, say that before summarizing.',
+        'If the user asks about voice notes, audio recordings, or spoken conversations, also call get_audio_transcription_status with the same filters and mention pending or failed transcripts.',
         'Then call get_daily_digest. Prioritize decisions, blockers, important updates, unanswered questions, links, and action items.',
         'Do not paste a raw chat log unless the user asks for details.',
         `Date: ${date || 'today'}`,
@@ -84,6 +85,7 @@ function registerTelegramPrompts(server) {
       [
         'Search selected Telegram chats/channels and summarize the useful findings.',
         'First call get_sync_status with the same source filter. If data is missing, never synced, or stale, mention that limitation.',
+        'If the query may refer to voice notes, audio recordings, or spoken conversations, also call get_audio_transcription_status and mention pending or failed transcripts.',
         'Then call search_telegram_messages. When a hit looks important or ambiguous, call get_message_context for surrounding messages.',
         'Group results by practical topic and include direct Telegram links when available.',
         `Query: ${query}`,
@@ -140,6 +142,21 @@ export function createTelegramMcpServer({ digestService, config }) {
       }
     },
     async (args) => toolResult(await digestService.getSyncStatus(args))
+  );
+
+  server.registerTool(
+    'get_audio_transcription_status',
+    {
+      title: 'Get Telegram audio transcription status',
+      description: 'Count selected Telegram voice/audio messages by transcription status before searching or summarizing recordings.',
+      inputSchema: {
+        ...sourceFilterSchema
+      },
+      annotations: {
+        readOnlyHint: true
+      }
+    },
+    async (args) => toolResult(await digestService.getAudioTranscriptionStatus(args))
   );
 
   server.registerTool(

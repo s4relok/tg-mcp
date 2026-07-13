@@ -69,17 +69,37 @@ function createDigestCacheKey({
   });
 }
 
+function messageText(message) {
+  return [message.text || '', message.transcriptText || '']
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 function publicMessage(message, sourceById = new Map()) {
   const source = sourceById.get(message.sourceId);
-  return {
+  const output = {
     sourceId: message.sourceId,
     sourceTitle: source?.title || message.sourceTitle || message.sourceId,
     messageId: message.messageId,
     date: toIso(message.date),
     senderName: message.senderName || null,
-    text: message.text || '',
+    text: messageText(message),
     link: message.link || null
   };
+
+  if (message.media) {
+    output.media = {
+      kind: message.media.kind || 'unknown',
+      mimeType: message.media.mimeType || null,
+      durationSec: message.media.durationSec ?? null,
+      fileName: message.media.fileName || null
+    };
+    output.transcriptText = message.transcriptText || '';
+    output.transcriptionStatus = message.transcription?.status || null;
+  }
+
+  return output;
 }
 
 function hoursSince(value, now) {
@@ -158,7 +178,7 @@ function messageExcerpt(message, sourceById) {
 function extractLinks(messages) {
   const links = [];
   for (const message of messages) {
-    const matches = String(message.text || '').match(URL_PATTERN) || [];
+    const matches = String(messageText(message)).match(URL_PATTERN) || [];
     for (const url of matches) {
       links.push({
         url,
@@ -207,10 +227,10 @@ function buildSourceDigests(messages, sourceById) {
     const source = sourceById.get(sourceId);
     const important = uniqueByMessage(
       sourceMessages.filter((message) => (
-        IMPORTANT_PATTERN.test(message.text || '') ||
-        ACTION_PATTERN.test(message.text || '') ||
-        DECISION_PATTERN.test(message.text || '') ||
-        (message.text || '').includes('?')
+        IMPORTANT_PATTERN.test(messageText(message)) ||
+        ACTION_PATTERN.test(messageText(message)) ||
+        DECISION_PATTERN.test(messageText(message)) ||
+        messageText(message).includes('?')
       ))
     ).slice(0, 8);
 
@@ -229,11 +249,11 @@ function summarize(messages, sourceById, { includeTimeline = true, timelineLimit
   const ascMessages = [...messages].sort((a, b) => new Date(a.date) - new Date(b.date));
   const clampedTimelineLimit = clampLimit(timelineLimit, DEFAULT_TIMELINE_LIMIT, MAX_TIMELINE_LIMIT);
   const highlights = uniqueByMessage(
-    ascMessages.filter((message) => IMPORTANT_PATTERN.test(message.text || '') || (message.text || '').includes('?'))
+    ascMessages.filter((message) => IMPORTANT_PATTERN.test(messageText(message)) || messageText(message).includes('?'))
   ).slice(0, 15);
-  const questions = ascMessages.filter((message) => (message.text || '').includes('?')).slice(0, 15);
-  const decisions = ascMessages.filter((message) => DECISION_PATTERN.test(message.text || '')).slice(0, 15);
-  const actionItems = ascMessages.filter((message) => ACTION_PATTERN.test(message.text || '')).slice(0, 15);
+  const questions = ascMessages.filter((message) => messageText(message).includes('?')).slice(0, 15);
+  const decisions = ascMessages.filter((message) => DECISION_PATTERN.test(messageText(message))).slice(0, 15);
+  const actionItems = ascMessages.filter((message) => ACTION_PATTERN.test(messageText(message))).slice(0, 15);
   const links = extractLinks(ascMessages);
 
   const sourceCounts = new Map();
@@ -472,6 +492,26 @@ export class TelegramDigestService {
     };
   }
 
+  async getAudioTranscriptionStatus({ sourceIds = [], tags = [], sourceQuery = '' } = {}) {
+    const resolvedSourceIds = await this.store.resolveSourceIds({ sourceIds, tags, sourceQuery });
+    if (!resolvedSourceIds.length) {
+      return {
+        total: 0,
+        counts: {
+          pending: 0,
+          processing: 0,
+          done: 0,
+          failed: 0,
+          missing: 0
+        }
+      };
+    }
+
+    return this.store.getAudioTranscriptionStatus({
+      sourceIds: resolvedSourceIds
+    });
+  }
+
   async getMessageContext({ sourceId, messageId, before = 5, after = 5 }) {
     const context = await this.store.getMessageContext({
       sourceId,
@@ -509,11 +549,11 @@ export class TelegramDigestService {
     });
 
     const candidates = messages
-      .filter((message) => ACTION_PATTERN.test(message.text || '') || (message.text || '').includes('?'))
+      .filter((message) => ACTION_PATTERN.test(messageText(message)) || messageText(message).includes('?'))
       .slice(0, limit)
       .map((message) => ({
         ...messagePreview(message, sourceById),
-        reason: ACTION_PATTERN.test(message.text || '') ? 'action-like wording' : 'open question'
+        reason: ACTION_PATTERN.test(messageText(message)) ? 'action-like wording' : 'open question'
       }));
 
     return {

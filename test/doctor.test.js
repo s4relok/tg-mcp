@@ -143,3 +143,21 @@ test('createReadinessReport validates optional Telegram slash bot config', async
   assert.ok(openBot.checks.some((check) => check.name === 'telegram_bot' && check.status === 'warning'));
   assert.ok(openBot.nextSteps.some((step) => step.id === 'restrict_telegram_bot'));
 });
+
+test('createReadinessReport warns when OpenAI transcription is enabled without a key', async () => {
+  const report = await createReadinessReport({
+    config: baseConfig({
+      openAiTranscriptionEnabled: true,
+      openAiApiKey: '',
+      openAiTranscriptionModel: 'gpt-4o-transcribe',
+      audioTranscriptionWorkDir: '/srv/tg-mcp/shared/audio-work'
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+
+  assert.equal(report.status, 'warning');
+  assert.ok(report.checks.some((check) => check.name === 'openai_transcription' && check.status === 'warning'));
+  assert.ok(report.nextSteps.some((step) => step.id === 'configure_openai_transcription'));
+});
