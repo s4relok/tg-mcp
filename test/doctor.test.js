@@ -149,7 +149,7 @@ test('createReadinessReport warns when OpenAI transcription is enabled without a
     config: baseConfig({
       openAiTranscriptionEnabled: true,
       openAiApiKey: '',
-      openAiTranscriptionModel: 'gpt-4o-transcribe',
+      openAiTranscriptionModel: 'gpt-4o-mini-transcribe',
       audioTranscriptionWorkDir: '/srv/tg-mcp/shared/audio-work'
     }),
     store: new MemoryTelegramStore({
@@ -167,7 +167,7 @@ test('createReadinessReport warns when OpenAI transcription has no allowed sourc
     config: baseConfig({
       openAiTranscriptionEnabled: true,
       openAiApiKey: 'test-key',
-      openAiTranscriptionModel: 'gpt-4o-transcribe',
+      openAiTranscriptionModel: 'gpt-4o-mini-transcribe',
       audioTranscriptionSourceIds: [],
       audioTranscriptionSourceTags: [],
       audioTranscriptionWorkDir: '/srv/tg-mcp/shared/audio-work'

@@ -127,7 +127,7 @@ export function createOpenAiAudioTranscriber(config, options = {}) {
   const client = options.client || new OpenAI({
     apiKey: config.openAiApiKey
   });
-  const model = config.openAiTranscriptionModel || 'gpt-4o-transcribe';
+  const model = config.openAiTranscriptionModel || 'gpt-4o-mini-transcribe';
   const responseFormat = config.openAiTranscriptionResponseFormat || 'json';
   const maxFileBytes = config.audioTranscriptionMaxFileBytes || DEFAULT_MAX_FILE_BYTES;
   const workDir = config.audioTranscriptionWorkDir || './tmp/audio-transcriptions';

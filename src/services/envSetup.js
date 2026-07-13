@@ -82,7 +82,7 @@ function defaultEnv({ production = false, tokenFactory = generateAuthToken } = {
     TELEGRAM_SYNC_ON_START: 'true',
     OPENAI_API_KEY: '',
     OPENAI_TRANSCRIPTION_ENABLED: 'false',
-    OPENAI_TRANSCRIPTION_MODEL: 'gpt-4o-transcribe',
+    OPENAI_TRANSCRIPTION_MODEL: 'gpt-4o-mini-transcribe',
     OPENAI_TRANSCRIPTION_RESPONSE_FORMAT: 'json',
     OPENAI_TRANSCRIPTION_PROMPT: '',
     OPENAI_TRANSCRIPTION_LANGUAGE: '',

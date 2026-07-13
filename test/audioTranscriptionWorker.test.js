@@ -11,7 +11,7 @@ function baseConfig(overrides = {}) {
   return {
     openAiApiKey: 'test-key',
     openAiTranscriptionEnabled: true,
-    openAiTranscriptionModel: 'gpt-4o-transcribe',
+    openAiTranscriptionModel: 'gpt-4o-mini-transcribe',
     openAiTranscriptionResponseFormat: 'json',
     openAiTranscriptionPrompt: '',
     openAiTranscriptionLanguage: '',
@@ -74,7 +74,7 @@ test('audio transcription worker downloads, transcribes, stores transcript, and 
         assert.equal(filePath, downloadedPath);
         assert.equal(args.durationSec, 900);
         return {
-          model: 'gpt-4o-transcribe',
+          model: 'gpt-4o-mini-transcribe',
           responseFormat: 'json',
           text: 'Decision: build the transcription pipeline.',
           usage: { type: 'tokens', total_tokens: 42 },
@@ -213,7 +213,7 @@ test('audio transcription worker only claims configured transcription sources', 
     }),
     createTranscriber: () => ({
       transcribe: async () => ({
-        model: 'gpt-4o-transcribe',
+        model: 'gpt-4o-mini-transcribe',
         responseFormat: 'json',
         text: 'Saved transcript'
       })

@@ -84,7 +84,7 @@ export function loadConfig(env = process.env) {
 
     openAiApiKey: env.OPENAI_API_KEY || '',
     openAiTranscriptionEnabled: readBoolean(env, 'OPENAI_TRANSCRIPTION_ENABLED', false),
-    openAiTranscriptionModel: env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe',
+    openAiTranscriptionModel: env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe',
     openAiTranscriptionResponseFormat: env.OPENAI_TRANSCRIPTION_RESPONSE_FORMAT || 'json',
     openAiTranscriptionPrompt: env.OPENAI_TRANSCRIPTION_PROMPT || '',
     openAiTranscriptionLanguage: env.OPENAI_TRANSCRIPTION_LANGUAGE || '',
