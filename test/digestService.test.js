@@ -276,7 +276,7 @@ test('getSourceSummary reports disabled sources without summarizing them', async
   });
 
   assert.equal(result.found, false);
-  assert.equal(result.source.sourceId, 'chat-2');
+  assert.equal(result.source, null);
   assert.equal(result.messageCount, 0);
 });
 

@@ -70,6 +70,7 @@ function createNextSteps(checks, { envFile } = {}) {
   const steps = [];
   const mongodb = findCheck(checks, 'mongodb');
   const appAuth = findCheck(checks, 'app_auth');
+  const oauth = findCheck(checks, 'oauth');
   const telegramCredentials = findCheck(checks, 'telegram_credentials');
   const telegramSession = findCheck(checks, 'telegram_session');
   const telegramAuth = findCheck(checks, 'telegram_auth');
@@ -90,6 +91,20 @@ function createNextSteps(checks, { envFile } = {}) {
       id: 'set_app_auth',
       reason: 'MCP/REST should not be exposed without an auth token.',
       command: cliCommand('setup-env', envFile)
+    });
+  }
+
+  if (oauth?.status === 'error') {
+    addUniqueStep(steps, {
+      id: 'fix_oauth',
+      reason: 'The OAuth MCP endpoint is enabled but incomplete.',
+      command: 'Set OAUTH_RESOURCE, OAUTH_ISSUER, and OAUTH_JWKS_URL, then restart the service.'
+    });
+  } else if (oauth?.status === 'warning') {
+    addUniqueStep(steps, {
+      id: 'restrict_oauth_subjects',
+      reason: 'OAuth currently relies only on the identity provider policy.',
+      command: 'Set OAUTH_ALLOWED_SUBJECTS=<exact_jwt_sub>[,<exact_jwt_sub>] for defense in depth.'
     });
   }
 
@@ -191,6 +206,35 @@ function appAuthStatus(config) {
   return warn('app_auth', 'APP_AUTH_TOKEN is not configured. Public MCP/REST exposure would be unauthenticated.');
 }
 
+function oauthStatus(config) {
+  if (!config.oauthEnabled) {
+    return ok('oauth', 'OAuth MCP endpoint is disabled.');
+  }
+
+  const missing = [
+    ['OAUTH_RESOURCE', config.oauthResource],
+    ['OAUTH_ISSUER', config.oauthIssuer],
+    ['OAUTH_JWKS_URL', config.oauthJwksUrl]
+  ].filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length > 0) {
+    return error('oauth', `OAuth MCP configuration is missing: ${missing.join(', ')}.`, {
+      missing
+    });
+  }
+
+  const details = {
+    mcpPath: config.oauthMcpPath,
+    resource: config.oauthResource,
+    issuer: config.oauthIssuer,
+    metadataUrl: config.oauthProtectedResourceMetadataUrl,
+    allowedSubjectCount: (config.oauthAllowedSubjects || []).length
+  };
+  if (!details.allowedSubjectCount) {
+    return warn('oauth', 'OAuth MCP is enabled without OAUTH_ALLOWED_SUBJECTS.', details);
+  }
+  return ok('oauth', 'OAuth MCP resource server is configured.', details);
+}
+
 function openAiTranscriptionStatus(config) {
   if (!config.openAiTranscriptionEnabled) {
     return ok('openai_transcription', 'OpenAI audio transcription worker is disabled.');
@@ -244,6 +288,7 @@ export async function createReadinessReport({
   }));
 
   checks.push(appAuthStatus(config));
+  checks.push(oauthStatus(config));
 
   try {
     checks.push(ok('mongodb', 'MongoDB ping succeeded.', await store.health()));

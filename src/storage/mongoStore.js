@@ -16,12 +16,15 @@ export class MongoTelegramStore {
     this.messages = db.collection('tg_messages');
     this.digests = db.collection('tg_digests');
     this.syncState = db.collection('sync_state');
+    this.sourceAudit = db.collection('tg_source_audit');
   }
 
   async ensureIndexes() {
     await Promise.all([
       this.sources.createIndex({ sourceId: 1 }, { unique: true }),
       this.sources.createIndex({ enabled: 1, tags: 1 }),
+      this.sources.createIndex({ enabled: 1, nextSyncAt: 1, 'settings.priority': -1 }),
+      this.sources.createIndex({ syncLockUntil: 1 }),
       this.messages.createIndex({ sourceId: 1, messageId: 1 }, { unique: true }),
       this.messages.createIndex({ sourceId: 1, date: -1 }),
       this.messages.createIndex({ date: -1 }),
@@ -35,7 +38,9 @@ export class MongoTelegramStore {
         }
       ),
       this.digests.createIndex({ periodStart: 1, periodEnd: 1, sourceIds: 1 }),
-      this.syncState.createIndex({ key: 1 }, { unique: true })
+      this.syncState.createIndex({ key: 1 }, { unique: true }),
+      this.sourceAudit.createIndex({ sourceId: 1, createdAt: -1 }),
+      this.sourceAudit.createIndex({ createdAt: -1 })
     ]);
     await this.ensureMessageTextSearchIndex();
   }
@@ -83,13 +88,21 @@ export class MongoTelegramStore {
     }
 
     const setOnInsert = {
-      createdAt: now
+      createdAt: now,
+      settings: {},
+      settingsVersion: 0,
+      nextSyncAt: now
     };
     if (!Object.prototype.hasOwnProperty.call(set, 'enabled')) {
       setOnInsert.enabled = source.enabled ?? false;
     }
     if (!Object.prototype.hasOwnProperty.call(set, 'tags')) {
       setOnInsert.tags = source.tags || [];
+    }
+    for (const key of ['settings', 'settingsVersion', 'nextSyncAt']) {
+      if (Object.prototype.hasOwnProperty.call(set, key)) {
+        delete setOnInsert[key];
+      }
     }
 
     await this.sources.updateOne(
@@ -135,6 +148,173 @@ export class MongoTelegramStore {
     );
 
     return result;
+  }
+
+  async updateSourceConfiguration(sourceId, {
+    enabled,
+    tags,
+    settings,
+    expectedVersion
+  } = {}) {
+    const now = new Date();
+    const filter = { sourceId };
+    if (expectedVersion !== undefined && expectedVersion !== null) {
+      if (expectedVersion === 0) {
+        filter.$or = [
+          { settingsVersion: 0 },
+          { settingsVersion: { $exists: false } }
+        ];
+      } else {
+        filter.settingsVersion = expectedVersion;
+      }
+    }
+
+    const set = { updatedAt: now };
+    if (enabled !== undefined) {
+      set.enabled = Boolean(enabled);
+      if (enabled) {
+        set.nextSyncAt = now;
+      }
+    }
+    if (tags !== undefined) {
+      set.tags = [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))];
+    }
+    for (const [key, value] of Object.entries(settings || {})) {
+      set[`settings.${key}`] = value;
+    }
+
+    const update = {
+      $set: set,
+      $inc: { settingsVersion: 1 }
+    };
+    if (enabled === false) {
+      update.$unset = {
+        syncLockUntil: '',
+        syncLockOwner: ''
+      };
+    }
+
+    return this.sources.findOneAndUpdate(
+      filter,
+      update,
+      { returnDocument: 'after' }
+    );
+  }
+
+  async appendSourceAudit(entry) {
+    await this.sourceAudit.insertOne({ ...entry });
+  }
+
+  async listSourcesDueForSync({ now = new Date(), limit = 10, defaultPriority = 50 } = {}) {
+    return this.sources.aggregate([
+      {
+        $match: {
+          enabled: true,
+          $and: [
+            {
+              $or: [
+                { nextSyncAt: { $lte: now } },
+                { nextSyncAt: { $exists: false } },
+                { nextSyncAt: null }
+              ]
+            },
+            {
+              $or: [
+                { syncLockUntil: { $lte: now } },
+                { syncLockUntil: { $exists: false } },
+                { syncLockUntil: null }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        $set: {
+          __effectivePriority: { $ifNull: ['$settings.priority', defaultPriority] }
+        }
+      },
+      { $sort: { nextSyncAt: 1, __effectivePriority: -1, title: 1 } },
+      { $limit: limit },
+      { $unset: '__effectivePriority' }
+    ]).toArray();
+  }
+
+  async claimSourceSync(sourceId, {
+    now = new Date(),
+    lockUntil,
+    owner
+  } = {}) {
+    return this.sources.findOneAndUpdate(
+      {
+        sourceId,
+        enabled: true,
+        $or: [
+          { syncLockUntil: { $lte: now } },
+          { syncLockUntil: { $exists: false } },
+          { syncLockUntil: null }
+        ]
+      },
+      {
+        $set: {
+          syncLockUntil: lockUntil,
+          syncLockOwner: owner,
+          lastSyncAttemptAt: now,
+          updatedAt: now
+        }
+      },
+      { returnDocument: 'after' }
+    );
+  }
+
+  async completeSourceSync(sourceId, {
+    now = new Date(),
+    nextSyncAt,
+    error = null
+  } = {}) {
+    return this.sources.findOneAndUpdate(
+      { sourceId },
+      {
+        $set: {
+          lastSyncCompletedAt: now,
+          nextSyncAt,
+          lastSyncError: error,
+          updatedAt: now
+        },
+        $unset: {
+          syncLockUntil: '',
+          syncLockOwner: ''
+        }
+      },
+      { returnDocument: 'after' }
+    );
+  }
+
+  async purgeSourceData(sourceId) {
+    const [messagesResult, digestsResult] = await Promise.all([
+      this.messages.deleteMany({ sourceId }),
+      this.digests.deleteMany({ sourceIds: sourceId })
+    ]);
+    const source = await this.sources.findOneAndUpdate(
+      { sourceId },
+      {
+        $unset: {
+          lastSyncedMessageId: '',
+          lastSyncedAt: '',
+          lastSyncMessageCount: '',
+          lastSyncError: ''
+        },
+        $set: {
+          nextSyncAt: new Date(),
+          updatedAt: new Date()
+        }
+      },
+      { returnDocument: 'after' }
+    );
+    return {
+      source,
+      deletedMessages: messagesResult.deletedCount,
+      deletedDigests: digestsResult.deletedCount
+    };
   }
 
   async markSourceSynced(sourceId, { lastSyncedMessageId = null, messageCount = 0 } = {}) {

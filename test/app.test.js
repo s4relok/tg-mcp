@@ -591,6 +591,25 @@ test('admin source management routes select, tag, enable, and disable sources', 
     assert.equal(enabledBody.status, 'enabled');
     assert.equal(enabledBody.source.enabled, true);
 
+    const settingsResponse = await fetch(`${base}/1001/settings`, { headers });
+    const settingsBody = await settingsResponse.json();
+    assert.equal(settingsResponse.status, 200);
+    assert.equal(settingsBody.source.effectiveSettings.syncIntervalSeconds, 300);
+
+    const updatedSettings = await fetch(`${base}/1001/settings`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        settings: { syncIntervalSeconds: 900, priority: 75 },
+        expectedVersion: settingsBody.source.settingsVersion
+      })
+    });
+    const updatedSettingsBody = await updatedSettings.json();
+    assert.equal(updatedSettings.status, 200);
+    assert.equal(updatedSettingsBody.status, 'updated');
+    assert.equal(updatedSettingsBody.source.effectiveSettings.syncIntervalSeconds, 900);
+    assert.ok(store.sourceAudit.some((entry) => entry.action === 'update_settings'));
+
     const missing = await fetch(`${base}/missing/enable`, {
       method: 'POST',
       headers
@@ -657,7 +676,10 @@ test('MCP endpoint exposes Telegram tools', async () => {
 
 test('ChatGPT MCP path can be exposed without bearer auth', async () => {
   const store = new MemoryTelegramStore({
-    sources: [{ sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] }]
+    sources: [
+      { sourceId: 'chat-1', title: 'Project Chat', enabled: true, tags: [] },
+      { sourceId: 'private-1', title: 'Private Home Chat', enabled: false, tags: [] }
+    ]
   });
   const app = createApp({
     config: {
@@ -699,6 +721,93 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
     await client.connect(transport);
     const tools = await client.listTools();
     assert.ok(tools.tools.some((tool) => tool.name === 'get_daily_digest'));
+    assert.equal(tools.tools.some((tool) => tool.name === 'enable_source'), false);
+    const listTool = tools.tools.find((tool) => tool.name === 'list_sources');
+    assert.equal(Object.hasOwn(listTool.inputSchema.properties, 'includeDisabled'), false);
+    const sources = await client.callTool({ name: 'list_sources', arguments: {} });
+    assert.deepEqual(sources.structuredContent.sources.map((source) => source.sourceId), ['chat-1']);
+    await transport.close();
+  } finally {
+    server.close();
+  }
+});
+
+test('authenticated owner MCP exposes and executes source management tools when enabled', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{
+      sourceId: 'channel-1',
+      title: 'Game Industry Wire',
+      username: 'gameindustrywire',
+      type: 'Channel',
+      enabled: false,
+      tags: ['news']
+    }]
+  });
+  const app = createApp({
+    config: {
+      ...testConfig(),
+      appAuthToken: 'secret-token',
+      mcpSourceManagementEnabled: true,
+      sourceMutationBatchLimit: 25,
+      telegramSyncMaxLimit: 1000
+    },
+    store,
+    digestService: createTelegramDigestService(store)
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const client = new Client({ name: 'tg-mcp-owner-test', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/mcp`),
+      {
+        requestInit: {
+          headers: { Authorization: 'Bearer secret-token' }
+        }
+      }
+    );
+
+    await client.connect(transport);
+    const tools = await client.listTools();
+    const names = tools.tools.map((tool) => tool.name);
+    for (const name of [
+      'enable_source',
+      'disable_source',
+      'set_source_tags',
+      'get_source_settings',
+      'update_source_settings',
+      'sync_source'
+    ]) {
+      assert.ok(names.includes(name), `${name} should be exposed to the owner`);
+    }
+
+    const listed = await client.callTool({
+      name: 'list_sources',
+      arguments: { includeDisabled: true }
+    });
+    assert.equal(listed.structuredContent.sources[0].sourceId, 'channel-1');
+
+    const enabled = await client.callTool({
+      name: 'enable_source',
+      arguments: { sourceIds: ['channel-1'], tags: ['gamedev'] }
+    });
+    assert.equal(enabled.structuredContent.status, 'updated');
+    assert.equal(enabled.structuredContent.sources[0].enabled, true);
+    assert.deepEqual(enabled.structuredContent.sources[0].tags, ['news', 'gamedev']);
+
+    const updated = await client.callTool({
+      name: 'update_source_settings',
+      arguments: {
+        sourceId: 'channel-1',
+        settings: { syncIntervalSeconds: 900, priority: 80 },
+        expectedVersion: 1
+      }
+    });
+    assert.equal(updated.structuredContent.status, 'updated');
+    assert.equal(updated.structuredContent.source.effectiveSettings.syncIntervalSeconds, 900);
+    assert.equal(store.sourceAudit.length, 2);
+
     await transport.close();
   } finally {
     server.close();

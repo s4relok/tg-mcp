@@ -172,7 +172,16 @@ test('syncTelegramMessages stores only whitelisted sources and honors minDate', 
       ]
     }
   });
-  const store = new MemoryTelegramStore();
+  const store = new MemoryTelegramStore({
+    sources: [{
+      sourceId: '1001',
+      title: 'Allowed Channel',
+      username: 'allowed_channel',
+      type: 'Channel',
+      enabled: true,
+      tags: []
+    }]
+  });
 
   const result = await syncTelegramMessages({
     client,
@@ -233,7 +242,16 @@ test('syncTelegramMessages stores audio-only messages for later transcription', 
       ]
     }
   });
-  const store = new MemoryTelegramStore();
+  const store = new MemoryTelegramStore({
+    sources: [{
+      sourceId: '1001',
+      title: 'Allowed Channel',
+      username: 'allowed_channel',
+      type: 'Channel',
+      enabled: true,
+      tags: []
+    }]
+  });
 
   const result = await syncTelegramMessages({
     client,
@@ -261,7 +279,8 @@ test('refreshTelegramSources preserves existing DB selection and tags', async ()
         sourceId: '1001',
         title: 'Old title',
         enabled: true,
-        tags: ['team']
+        tags: ['team'],
+        settings: { priority: 90, historyDepthDays: 14 }
       }
     ]
   });
@@ -280,6 +299,8 @@ test('refreshTelegramSources preserves existing DB selection and tags', async ()
   assert.equal(source.title, 'Allowed Channel');
   assert.equal(source.enabled, true);
   assert.deepEqual(source.tags, ['team']);
+  assert.deepEqual(source.settings, { priority: 90, historyDepthDays: 14 });
+  assert.equal(result.selectedSourceCount, 1);
 });
 
 test('syncTelegramMessages uses DB-enabled sources when env whitelist is empty', async () => {
@@ -403,4 +424,101 @@ test('syncTelegramMessages ignores lastSyncedMessageId when backfilling by minDa
 
   const [source] = await store.listSources({ includeDisabled: true, sourceIds: ['1001'] });
   assert.equal(source.lastSyncedMessageId, 8);
+});
+
+test('syncTelegramMessages cannot sync a disabled source by explicit id', async () => {
+  const client = new FakeTelegramClient({ dialogs, messagesBySource: {} });
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: '1001', title: 'Allowed Channel', enabled: false, tags: [] }]
+  });
+
+  await assert.rejects(
+    syncTelegramMessages({
+      client,
+      store,
+      config: { allowedSourceIds: [], telegramSyncLimit: 10 },
+      sourceIds: ['1001']
+    }),
+    /No enabled Telegram sources/
+  );
+  assert.equal(client.iterCalls.length, 0);
+});
+
+test('syncTelegramMessages enforces ALLOWED_SOURCE_IDS as a hard ceiling', async () => {
+  const client = new FakeTelegramClient({ dialogs, messagesBySource: {} });
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: '2002', title: 'Other Chat', enabled: true, tags: [] }]
+  });
+
+  await assert.rejects(
+    syncTelegramMessages({
+      client,
+      store,
+      config: { allowedSourceIds: ['1001'], telegramSyncLimit: 10 },
+      sourceIds: ['2002']
+    }),
+    /No enabled Telegram sources/
+  );
+  assert.equal(client.iterCalls.length, 0);
+});
+
+test('syncTelegramMessages applies reply, forwarded, and media settings before storage', async () => {
+  const client = new FakeTelegramClient({
+    dialogs,
+    messagesBySource: {
+      1001: [
+        { id: 1, date: 1784020000, message: 'Plain update' },
+        { id: 2, date: 1784020000, message: 'Reply', replyTo: { replyToMsgId: 1 } },
+        { id: 3, date: 1784020000, message: 'Forward', fwdFrom: { fromId: 99 } },
+        {
+          id: 4,
+          date: 1784020000,
+          message: '',
+          voice: {
+            id: 100,
+            mimeType: 'audio/ogg',
+            attributes: [{ className: 'DocumentAttributeAudio', duration: 10 }]
+          }
+        },
+        {
+          id: 5,
+          date: 1784020000,
+          message: 'Audio caption',
+          voice: {
+            id: 101,
+            mimeType: 'audio/ogg',
+            attributes: [{ className: 'DocumentAttributeAudio', duration: 10 }]
+          }
+        }
+      ]
+    }
+  });
+  const store = new MemoryTelegramStore({
+    sources: [{
+      sourceId: '1001',
+      title: 'Allowed Channel',
+      enabled: true,
+      tags: [],
+      settings: {
+        includeMedia: false,
+        includeReplies: false,
+        includeForwardedPosts: false,
+        historyDepthDays: 30
+      }
+    }]
+  });
+
+  const result = await syncTelegramMessages({
+    client,
+    store,
+    config: { allowedSourceIds: [], telegramSyncLimit: 10 },
+    now: new Date('2026-07-14T12:00:00.000Z')
+  });
+
+  assert.equal(result.messageCount, 2);
+  assert.equal(result.audioMessageCount, 0);
+  const messages = await store.findMessages({ sourceIds: ['1001'], sort: 'asc' });
+  assert.deepEqual(messages.map((message) => message.messageId), [1, 5]);
+  assert.equal(messages[1].media, undefined);
+  assert.equal(messages[1].transcription, undefined);
 });

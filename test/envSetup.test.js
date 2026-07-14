@@ -30,6 +30,9 @@ test('setupEnvFile creates production env with generated auth token', async () =
   assert.equal(values.NODE_ENV, 'production');
   assert.equal(values.TELEGRAM_SESSION_FILE, '/srv/tg-mcp/shared/sessions/telegram.session');
   assert.equal(values.OPENAI_TRANSCRIPTION_ENABLED, 'false');
+  assert.equal(values.OAUTH_ENABLED, 'false');
+  assert.equal(values.OAUTH_MCP_PATH, '/tg-mcp/oauth-mcp');
+  assert.equal(values.OAUTH_JWT_ALGORITHMS, 'RS256,ES256');
   assert.equal(values.OPENAI_TRANSCRIPTION_MODEL, 'gpt-4o-mini-transcribe');
   assert.equal(values.AUDIO_TRANSCRIPTION_SOURCE_IDS, '');
   assert.equal(values.AUDIO_TRANSCRIPTION_SOURCE_TAGS, '');
@@ -48,6 +51,8 @@ test('setupEnvFile preserves existing protected secrets when force is used', asy
     'TELEGRAM_API_ID=123',
     'TELEGRAM_API_HASH=hash',
     'OPENAI_API_KEY=keep-openai-key',
+    'ALLOWED_SOURCE_IDS=source-1',
+    'OAUTH_ALLOWED_SUBJECTS=owner-1',
     'APP_AUTH_TOKEN=keep-token',
     ''
   ].join('\n'));
@@ -68,6 +73,8 @@ test('setupEnvFile preserves existing protected secrets when force is used', asy
   assert.equal(values.TELEGRAM_API_ID, '123');
   assert.equal(values.TELEGRAM_API_HASH, 'hash');
   assert.equal(values.OPENAI_API_KEY, 'keep-openai-key');
+  assert.equal(values.ALLOWED_SOURCE_IDS, 'source-1');
+  assert.equal(values.OAUTH_ALLOWED_SUBJECTS, 'owner-1');
   assert.equal(values.APP_AUTH_TOKEN, 'keep-token');
   assert.equal(backup.NODE_ENV, 'development');
 });

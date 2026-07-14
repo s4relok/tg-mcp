@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { assertSafeRuntimeConfig, loadConfigFromProcessEnv } from '../src/config.js';
+import { assertSafeRuntimeConfig, loadConfig, loadConfigFromProcessEnv } from '../src/config.js';
 
 test('loadConfigFromProcessEnv reads an explicit env file with process env precedence', async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-config-'));
@@ -102,4 +102,71 @@ test('assertSafeRuntimeConfig requires auth in production', () => {
     appAuthToken: '',
     allowUnauthenticated: true
   }));
+});
+
+test('loadConfig exposes fail-closed source management and scheduler defaults', () => {
+  const defaults = loadConfig({ TELEGRAM_SYNC_INTERVAL_SECONDS: '420' });
+  assert.equal(defaults.sourceDefaultSyncIntervalSeconds, 420);
+  assert.equal(defaults.sourceDefaultHistoryDepthDays, 30);
+  assert.equal(defaults.sourceDefaultIncludeMedia, true);
+  assert.equal(defaults.sourceDefaultPriority, 50);
+  assert.equal(defaults.mcpSourceManagementEnabled, false);
+
+  const configured = loadConfig({
+    SOURCE_DEFAULT_SYNC_INTERVAL_SECONDS: '900',
+    SOURCE_DEFAULT_INCLUDE_MEDIA: 'false',
+    MCP_SOURCE_MANAGEMENT_ENABLED: 'true'
+  });
+  assert.equal(configured.sourceDefaultSyncIntervalSeconds, 900);
+  assert.equal(configured.sourceDefaultIncludeMedia, false);
+  assert.equal(configured.mcpSourceManagementEnabled, true);
+});
+
+test('loadConfig exposes fail-closed OAuth defaults and derived resource metadata URL', () => {
+  const defaults = loadConfig({
+    PUBLIC_BASE_URL: 'https://example.com/base'
+  });
+  assert.equal(defaults.oauthEnabled, false);
+  assert.equal(defaults.oauthMcpPath, '/tg-mcp/oauth-mcp');
+  assert.equal(defaults.oauthResource, 'https://example.com/tg-mcp/oauth-mcp');
+  assert.equal(
+    defaults.oauthProtectedResourceMetadataUrl,
+    'https://example.com/.well-known/oauth-protected-resource/tg-mcp/oauth-mcp'
+  );
+  assert.deepEqual(defaults.oauthJwtAlgorithms, ['RS256', 'ES256']);
+  assert.deepEqual(defaults.oauthAllowedSubjects, []);
+});
+
+test('assertSafeRuntimeConfig validates enabled OAuth configuration', () => {
+  const missing = loadConfig({
+    NODE_ENV: 'development',
+    OAUTH_ENABLED: 'true'
+  });
+  assert.throws(() => assertSafeRuntimeConfig(missing), /OAUTH_ISSUER is required/);
+
+  const valid = loadConfig({
+    NODE_ENV: 'development',
+    PUBLIC_BASE_URL: 'http://127.0.0.1:3010',
+    OAUTH_ENABLED: 'true',
+    OAUTH_ISSUER: 'http://127.0.0.1:4010',
+    OAUTH_JWKS_URL: 'http://127.0.0.1:4010/.well-known/jwks.json',
+    OAUTH_ALLOWED_SUBJECTS: 'owner-1,owner-2'
+  });
+  assert.doesNotThrow(() => assertSafeRuntimeConfig(valid));
+  assert.deepEqual(valid.oauthAllowedSubjects, ['owner-1', 'owner-2']);
+
+  assert.throws(
+    () => assertSafeRuntimeConfig({
+      ...valid,
+      oauthJwtAlgorithms: ['HS256']
+    }),
+    /only asymmetric/
+  );
+  assert.throws(
+    () => assertSafeRuntimeConfig({
+      ...valid,
+      oauthMcpPath: valid.mcpPath
+    }),
+    /must be different/
+  );
 });

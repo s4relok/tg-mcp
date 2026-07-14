@@ -2,12 +2,13 @@
 
 [![CI](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml)
 
-Read-only Telegram digest MCP server that logs into a Telegram user account and works only with selected Telegram chats and channels.
+Telegram digest MCP server that logs into a Telegram user account and works only with selected Telegram chats and channels. Read access is the default; source management is an explicit authenticated capability.
 
 ## Current shape
 
 - Node.js 22 ESM service.
 - Express + MCP Streamable HTTP endpoint at `/mcp`.
+- Optional OAuth 2.1 protected MCP endpoint at `/tg-mcp/oauth-mcp`.
 - REST/OpenAPI fallback under `/tg-mcp/api` and `/tg-mcp/openapi.json`.
 - MongoDB storage.
 - GramJS-based Telegram user account sync CLI.
@@ -26,6 +27,13 @@ Read-only Telegram digest MCP server that logs into a Telegram user account and 
   - `get_message_context`
   - `get_action_items`
   - `get_source_summary`
+- Optional authenticated owner MCP tools:
+  - `enable_source`
+  - `disable_source`
+  - `set_source_tags`
+  - `sync_source`
+  - `get_source_settings`
+  - `update_source_settings`
 
 ## Local development
 
@@ -73,7 +81,44 @@ Then paste this URL into ChatGPT Web as the developer-mode MCP server URL:
 https://celticspear.com/tg-mcp/chatgpt-mcp-<long-random-slug>
 ```
 
-Do not publish that URL. Anyone who knows it can call the read-only MCP tools for the selected Telegram sources. For a shared or published app, replace this test path with a proper OAuth flow.
+Do not publish that URL. Anyone who knows it can call the read-only MCP tools for the selected Telegram sources. The no-auth path never exposes disabled source metadata or source-management tools, even when owner management is enabled elsewhere. For a shared or published app, use the OAuth endpoint below.
+
+## OAuth 2.1 MCP endpoint
+
+`tg-mcp` can act as an OAuth protected resource server for ChatGPT. It deliberately does not implement login, consent, token issuance, client registration, or refresh tokens: use an established external identity provider that supports authorization code + PKCE and publishes OAuth/OIDC discovery metadata.
+
+Configure the resource server:
+
+```text
+OAUTH_ENABLED=true
+OAUTH_MCP_PATH=/tg-mcp/oauth-mcp
+OAUTH_RESOURCE=https://celticspear.com/tg-mcp/oauth-mcp
+OAUTH_ISSUER=https://<your-idp-issuer>
+OAUTH_JWKS_URL=https://<your-idp-issuer>/<jwks-path>
+OAUTH_JWT_ALGORITHMS=RS256,ES256
+OAUTH_ALLOWED_SUBJECTS=<your-exact-idp-sub>
+OAUTH_RESOURCE_DOCUMENTATION=https://<your-docs-url>
+```
+
+The IdP must echo the OAuth `resource` parameter and issue an expiring JWT access token with an audience exactly equal to `OAUTH_RESOURCE`. Tokens must contain `sub`, `scope` or `scp`, and preferably `client_id` or `azp`. Configure ChatGPT's callback URL shown in the app/connector management UI and let the IdP expose its authorization/token endpoints through discovery.
+
+Available scopes:
+
+- `telegram:read`: enabled-source lists, digests, search, summaries, and status.
+- `telegram:sources:read`: disabled-source catalog and source settings.
+- `telegram:sources:manage`: enable/disable, tags, and settings mutations.
+- `telegram:sync:run`: exact bounded manual sync.
+
+The OAuth transport always requires `telegram:read`. Each privileged tool checks its additional scopes against the current request token, including after a session has been initialized. Missing scopes return an MCP `mcp/www_authenticate` challenge so ChatGPT can request authorization again.
+
+Discovery metadata is published at both:
+
+```text
+https://celticspear.com/.well-known/oauth-protected-resource
+https://celticspear.com/.well-known/oauth-protected-resource/tg-mcp/oauth-mcp
+```
+
+`MCP_SOURCE_MANAGEMENT_ENABLED=true` is still required before privileged source tools are registered. Keep `APP_AUTH_TOKEN` for admin, REST, CLI setup, and the legacy `/mcp` endpoint; OAuth protects only `OAUTH_MCP_PATH`. See the implementation and IdP rollout checklist in [docs/oauth-scopes-plan.md](docs/oauth-scopes-plan.md).
 
 ## Telegram setup
 
@@ -100,7 +145,7 @@ export TELEGRAM_API_HASH=<api_hash>
 npm run cli -- setup-env --production --env-path /srv/tg-mcp/shared/.env --from-env TELEGRAM_API_ID --from-env TELEGRAM_API_HASH
 ```
 
-Existing secrets are preserved unless you pass a new value with `--set` or `--from-env`. The command writes mode `0600`, creates a backup before overwriting an existing file, and generates `APP_AUTH_TOKEN` when it is missing.
+Existing secrets and safety allowlists (`ALLOWED_SOURCE_IDS`, `OAUTH_ALLOWED_SUBJECTS`) are preserved unless you pass a new value with `--set` or `--from-env`. The command writes mode `0600`, creates a backup before overwriting an existing file, and generates `APP_AUTH_TOKEN` when it is missing.
 
 List available sources:
 
@@ -125,6 +170,10 @@ Useful variants:
 npm run cli -- disable-source <id>
 npm run cli -- set-source-tags <id> --tag work --tag project-x
 npm run cli -- enable-source <id> --tag work
+npm run cli -- get-source-settings <id>
+npm run cli -- update-source-settings <id> --sync-interval-seconds 900 --history-depth-days 30 --priority 80
+npm run cli -- update-source-settings <id> --include-media false --include-replies true --include-forwarded-posts false
+npm run cli -- update-source-settings <id> --priority inherit
 npm run cli -- db-sources --include-disabled
 npm run cli -- sync --source-id <id> --limit 100
 npm run cli -- backfill --days 7 --limit 1000
@@ -133,7 +182,15 @@ npm run cli -- transcribe-audio --source-id <id> --limit 1
 npm run cli -- retry-failed-transcriptions --source-id <id> --limit 10
 ```
 
-Alternatively, put selected source ids into `ALLOWED_SOURCE_IDS`; env selection overrides DB-enabled sources during sync.
+`tg_sources.enabled` is the operational source of truth. If `ALLOWED_SOURCE_IDS` is set, it is an additional hard server ceiling: a DB-enabled source outside that list cannot be synchronized, including through CLI, admin, or MCP manual sync. Run `refresh-sources` before enabling a newly discovered source.
+
+Tags are normalized to lowercase. `set-source-tags` replaces tags by default; use `--mode add` or `--mode remove` for incremental changes.
+
+Disabling a source stops future sync and excludes it from normal search/digests, but it does not delete already stored messages. To delete them, first disable the source and then run the CLI-only destructive operation:
+
+```bash
+npm run cli -- purge-source-data <id> --force
+```
 
 `login` is interactive and writes the Telegram session file. Later commands reuse that session and should not prompt unless Telegram requires reauthorization.
 
@@ -168,7 +225,18 @@ curl -X POST http://127.0.0.1:3010/admin/sync \
   -d '{"sourceIds":["<sourceId>"],"limit":100}'
 ```
 
-Use `{"backfillDays":7}` with `/admin/sync` to bypass the incremental cursor for a historical import. Source management endpoints also support `/admin/sources/<sourceId>/enable`, `/admin/sources/<sourceId>/disable`, and `/admin/sources/<sourceId>/tags`. Endpoints that talk to Telegram use the existing session file and never prompt.
+Use `{"backfillDays":7}` with `/admin/sync` to bypass the incremental cursor for a historical import. Source management endpoints also support `/admin/sources/<sourceId>/enable`, `/admin/sources/<sourceId>/disable`, `/admin/sources/<sourceId>/tags`, and `GET/PATCH /admin/sources/<sourceId>/settings`. Endpoints that talk to Telegram use the existing session file and never prompt.
+
+Example settings patch with optimistic concurrency:
+
+```bash
+curl -X PATCH http://127.0.0.1:3010/admin/sources/<sourceId>/settings \
+  -H "Authorization: Bearer <APP_AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"settings":{"syncIntervalSeconds":900,"priority":80},"expectedVersion":2}'
+```
+
+All successful source mutations are appended to `tg_source_audit` with actor, action, before/after state, and timestamp.
 
 ## Background sync
 
@@ -178,11 +246,33 @@ The HTTP service can run a safe background sync loop after the Telegram session 
 TELEGRAM_SYNC_ENABLED=true
 TELEGRAM_SYNC_INTERVAL_SECONDS=300
 TELEGRAM_SYNC_ON_START=true
+SOURCE_DEFAULT_SYNC_INTERVAL_SECONDS=300
+SOURCE_DEFAULT_HISTORY_DEPTH_DAYS=30
+SOURCE_SCHEDULER_POLL_INTERVAL_SECONDS=30
 ```
 
 If credentials, session, or selected sources are missing, the worker logs a warning and waits for the next interval. It never prompts from the systemd service.
 
-Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports.
+The scheduler polls for due sources, orders them by `nextSyncAt` and per-source priority, and uses a lease so background, admin, CLI, and MCP sync cannot overlap for the same source. `TELEGRAM_SYNC_INTERVAL_SECONDS` remains a compatibility fallback for `SOURCE_DEFAULT_SYNC_INTERVAL_SECONDS`.
+
+Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports, but is clamped to the source's `historyDepthDays` setting.
+
+Per-source settings:
+
+- `syncIntervalSeconds`: `60..604800`, or `null`/CLI `inherit` for the server default.
+- `historyDepthDays`: `1..3650`, or inherit. This limits import depth and is not retention.
+- `includeMedia`: keeps supported media metadata and permits supported audio transcription jobs; text captions remain searchable when media metadata is disabled.
+- `includeReplies`: imports or skips reply messages.
+- `includeForwardedPosts`: imports or skips forwarded messages.
+- `priority`: `0..100`; higher values run first when multiple sources are due.
+
+To expose owner write tools on the bearer-protected MCP endpoint, explicitly enable:
+
+```text
+MCP_SOURCE_MANAGEMENT_ENABLED=true
+```
+
+This flag has no effect on the no-auth `CHATGPT_MCP_PATH`; that endpoint remains read-only. On the OAuth endpoint, the same tools additionally require `telegram:sources:read` plus `telegram:sources:manage` (or `telegram:sync:run` for manual sync).
 
 Check data freshness:
 
@@ -335,6 +425,8 @@ That installer exposes:
 
 ```text
 https://celticspear.com/mcp
+https://celticspear.com/tg-mcp/oauth-mcp
+https://celticspear.com/.well-known/oauth-protected-resource
 https://celticspear.com/tg-mcp/openapi.json
 https://celticspear.com/tg-mcp/api/...
 ```

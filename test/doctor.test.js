@@ -182,3 +182,31 @@ test('createReadinessReport warns when OpenAI transcription has no allowed sourc
   assert.equal(check.details.missingSourceFilter, true);
   assert.ok(report.nextSteps.some((step) => /AUDIO_TRANSCRIPTION_SOURCE_IDS/.test(step.command)));
 });
+
+test('createReadinessReport validates optional OAuth configuration and subject restriction', async () => {
+  const incomplete = await createReadinessReport({
+    config: baseConfig({ oauthEnabled: true, oauthResource: '', oauthIssuer: '', oauthJwksUrl: '' }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+  assert.ok(incomplete.checks.some((check) => check.name === 'oauth' && check.status === 'error'));
+  assert.ok(incomplete.nextSteps.some((step) => step.id === 'fix_oauth'));
+
+  const unrestricted = await createReadinessReport({
+    config: baseConfig({
+      oauthEnabled: true,
+      oauthMcpPath: '/tg-mcp/oauth-mcp',
+      oauthResource: 'https://celticspear.com/tg-mcp/oauth-mcp',
+      oauthIssuer: 'https://issuer.example.com',
+      oauthJwksUrl: 'https://issuer.example.com/jwks.json',
+      oauthProtectedResourceMetadataUrl: 'https://celticspear.com/.well-known/oauth-protected-resource/tg-mcp/oauth-mcp',
+      oauthAllowedSubjects: []
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+  assert.ok(unrestricted.checks.some((check) => check.name === 'oauth' && check.status === 'warning'));
+  assert.ok(unrestricted.nextSteps.some((step) => step.id === 'restrict_oauth_subjects'));
+});

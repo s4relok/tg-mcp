@@ -1,8 +1,15 @@
 export class MemoryTelegramStore {
   constructor({ sources = [], messages = [] } = {}) {
-    this.sources = sources.map((source) => ({ enabled: true, tags: [], ...source }));
+    this.sources = sources.map((source) => ({
+      enabled: true,
+      tags: [],
+      settings: {},
+      settingsVersion: 0,
+      ...source
+    }));
     this.messages = messages.map((message) => ({ ...message, date: new Date(message.date) }));
     this.savedDigests = [];
+    this.sourceAudit = [];
   }
 
   async ensureIndexes() {}
@@ -26,7 +33,14 @@ export class MemoryTelegramStore {
       this.sources[index] = next;
       return;
     }
-    this.sources.push({ enabled: true, tags: [], ...source });
+    this.sources.push({
+      enabled: true,
+      tags: [],
+      settings: {},
+      settingsVersion: 0,
+      nextSyncAt: new Date(),
+      ...source
+    });
   }
 
   async setSourceEnabled(sourceId, enabled) {
@@ -45,6 +59,104 @@ export class MemoryTelegramStore {
     }
     source.tags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
     return source;
+  }
+
+  async updateSourceConfiguration(sourceId, {
+    enabled,
+    tags,
+    settings,
+    expectedVersion
+  } = {}) {
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (!source) {
+      return null;
+    }
+    const version = source.settingsVersion || 0;
+    if (expectedVersion !== undefined && expectedVersion !== null && version !== expectedVersion) {
+      return null;
+    }
+    if (enabled !== undefined) {
+      source.enabled = Boolean(enabled);
+      if (enabled) {
+        source.nextSyncAt = new Date();
+      } else {
+        delete source.syncLockUntil;
+        delete source.syncLockOwner;
+      }
+    }
+    if (tags !== undefined) {
+      source.tags = [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))];
+    }
+    if (settings) {
+      source.settings = { ...(source.settings || {}), ...settings };
+    }
+    source.settingsVersion = version + 1;
+    source.updatedAt = new Date();
+    return source;
+  }
+
+  async appendSourceAudit(entry) {
+    this.sourceAudit.push({ ...entry });
+  }
+
+  async listSourcesDueForSync({ now = new Date(), limit = 10, defaultPriority = 50 } = {}) {
+    return this.sources
+      .filter((source) => source.enabled)
+      .filter((source) => !source.nextSyncAt || new Date(source.nextSyncAt) <= now)
+      .filter((source) => !source.syncLockUntil || new Date(source.syncLockUntil) <= now)
+      .sort((left, right) => {
+        const leftTime = left.nextSyncAt ? new Date(left.nextSyncAt).getTime() : 0;
+        const rightTime = right.nextSyncAt ? new Date(right.nextSyncAt).getTime() : 0;
+        if (leftTime !== rightTime) {
+          return leftTime - rightTime;
+        }
+        return (right.settings?.priority ?? defaultPriority) - (left.settings?.priority ?? defaultPriority);
+      })
+      .slice(0, limit);
+  }
+
+  async claimSourceSync(sourceId, { now = new Date(), lockUntil, owner } = {}) {
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (!source || !source.enabled || (source.syncLockUntil && new Date(source.syncLockUntil) > now)) {
+      return null;
+    }
+    source.syncLockUntil = lockUntil;
+    source.syncLockOwner = owner;
+    source.lastSyncAttemptAt = now;
+    return source;
+  }
+
+  async completeSourceSync(sourceId, { now = new Date(), nextSyncAt, error = null } = {}) {
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (!source) {
+      return null;
+    }
+    source.lastSyncCompletedAt = now;
+    source.nextSyncAt = nextSyncAt;
+    source.lastSyncError = error;
+    delete source.syncLockUntil;
+    delete source.syncLockOwner;
+    return source;
+  }
+
+  async purgeSourceData(sourceId) {
+    const before = this.messages.length;
+    this.messages = this.messages.filter((message) => message.sourceId !== sourceId);
+    const source = this.sources.find((item) => item.sourceId === sourceId) || null;
+    if (source) {
+      delete source.lastSyncedMessageId;
+      delete source.lastSyncedAt;
+      delete source.lastSyncMessageCount;
+      delete source.lastSyncError;
+      source.nextSyncAt = new Date();
+    }
+    const deletedDigests = this.savedDigests.length;
+    this.savedDigests = [];
+    return {
+      source,
+      deletedMessages: before - this.messages.length,
+      deletedDigests
+    };
   }
 
   async markSourceSynced(sourceId, { lastSyncedMessageId = null, messageCount = 0 } = {}) {

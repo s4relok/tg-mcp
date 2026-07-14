@@ -1,7 +1,7 @@
 {
   "name": "tg-mcp",
   "version": "1.0.0",
-  "description": "Read-only Telegram digest MCP server for selected chats and channels.",
+  "description": "Telegram digest and source management MCP server for selected chats and channels.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -28,6 +28,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "grammy": "^1.44.0",
+    "jose": "^6.2.3",
     "mongodb": "^7.5.0",
     "openai": "^6.46.0",
     "telegram": "^2.26.22",

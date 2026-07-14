@@ -50,6 +50,30 @@ function createBulkStoreHarness() {
   };
 }
 
+function createSourceMutationHarness() {
+  const findOneAndUpdateOperations = [];
+  const aggregateOperations = [];
+  const collection = {
+    findOneAndUpdate: async (...args) => {
+      findOneAndUpdateOperations.push(args);
+      return { sourceId: args[0].sourceId || 'source-1' };
+    },
+    aggregate: (pipeline) => {
+      aggregateOperations.push(pipeline);
+      return { toArray: async () => [] };
+    }
+  };
+  const db = {
+    databaseName: 'test',
+    collection: () => collection
+  };
+  return {
+    store: new MongoTelegramStore(db, { close: async () => {} }),
+    findOneAndUpdateOperations,
+    aggregateOperations
+  };
+}
+
 test('upsertSource does not set enabled in both $set and $setOnInsert', async () => {
   const { store, operations } = createStoreHarness();
 
@@ -111,4 +135,47 @@ test('upsertMessages only initializes transcription fields on insert', async () 
   assert.equal(Object.hasOwn(update.$set, 'transcription'), false);
   assert.equal(update.$setOnInsert.transcriptText, '');
   assert.deepEqual(update.$setOnInsert.transcription, { status: 'pending', attempts: 0 });
+});
+
+test('updateSourceConfiguration applies an atomic versioned settings patch', async () => {
+  const { store, findOneAndUpdateOperations } = createSourceMutationHarness();
+  await store.updateSourceConfiguration('source-1', {
+    enabled: true,
+    tags: ['work'],
+    settings: { priority: 80, historyDepthDays: 14 },
+    expectedVersion: 0
+  });
+
+  const [filter, update, options] = findOneAndUpdateOperations[0];
+  assert.equal(filter.sourceId, 'source-1');
+  assert.deepEqual(filter.$or, [
+    { settingsVersion: 0 },
+    { settingsVersion: { $exists: false } }
+  ]);
+  assert.equal(update.$set.enabled, true);
+  assert.deepEqual(update.$set.tags, ['work']);
+  assert.equal(update.$set['settings.priority'], 80);
+  assert.equal(update.$set['settings.historyDepthDays'], 14);
+  assert.deepEqual(update.$inc, { settingsVersion: 1 });
+  assert.equal(options.returnDocument, 'after');
+});
+
+test('listSourcesDueForSync sorts with the effective default priority', async () => {
+  const { store, aggregateOperations } = createSourceMutationHarness();
+  await store.listSourcesDueForSync({
+    now: new Date('2026-07-14T12:00:00.000Z'),
+    limit: 5,
+    defaultPriority: 50
+  });
+
+  const pipeline = aggregateOperations[0];
+  assert.deepEqual(pipeline[1].$set.__effectivePriority, {
+    $ifNull: ['$settings.priority', 50]
+  });
+  assert.deepEqual(pipeline[2].$sort, {
+    nextSyncAt: 1,
+    __effectivePriority: -1,
+    title: 1
+  });
+  assert.deepEqual(pipeline[3], { $limit: 5 });
 });

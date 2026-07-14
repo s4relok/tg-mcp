@@ -17,6 +17,12 @@ if ! grep -q 'ProxyPass /tg-mcp/ ' "$SITE_CONF"; then
     "    ProxyPassReverse /tg-mcp/ http://127.0.0.1:3010/tg-mcp/"
   )
 fi
+if ! grep -q 'ProxyPass /.well-known/oauth-protected-resource ' "$SITE_CONF"; then
+  INSERT_LINES+=(
+    "    ProxyPass /.well-known/oauth-protected-resource http://127.0.0.1:3010/.well-known/oauth-protected-resource"
+    "    ProxyPassReverse /.well-known/oauth-protected-resource http://127.0.0.1:3010/.well-known/oauth-protected-resource"
+  )
+fi
 
 if [ "${#INSERT_LINES[@]}" -eq 0 ]; then
   echo "Apache tg-mcp proxies already exist in $SITE_CONF"

@@ -1,8 +1,10 @@
 import { assertSafeRuntimeConfig, loadConfigFromProcessEnv } from './config.js';
 import { createApp } from './app.js';
 import { createTelegramDigestService } from './services/digestService.js';
+import { createSourceManagementService } from './services/sourceManagement.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import { startAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
+import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 import { startTelegramSyncWorker } from './telegram/syncWorker.js';
 import { startTelegramSlashBot } from './telegram/slashBot.js';
 
@@ -11,9 +13,9 @@ async function main() {
   assertSafeRuntimeConfig(config);
   const store = await createMongoStore(config);
   const digestService = createTelegramDigestService(store);
-  const app = createApp({ config, store, digestService });
+  const sourceManagementService = createSourceManagementService({ store, config });
   const audioTranscriptionWorker = startAudioTranscriptionWorker({ config, store });
-  const syncWorker = startTelegramSyncWorker({
+  const syncCoordinator = createTelegramSyncCoordinator({
     config,
     store,
     afterSync: async () => {
@@ -22,10 +24,25 @@ async function main() {
       });
     }
   });
+  const app = createApp({
+    config,
+    store,
+    digestService,
+    sourceManagementService,
+    syncCoordinator
+  });
+  const syncWorker = startTelegramSyncWorker({
+    config,
+    store,
+    coordinator: syncCoordinator
+  });
   const slashBot = startTelegramSlashBot({ config, digestService });
 
   const server = app.listen(config.port, config.host, () => {
     console.log(`tg-mcp listening on http://${config.host}:${config.port}${config.mcpPath}`);
+    if (config.oauthEnabled) {
+      console.log(`OAuth MCP enabled at ${config.oauthResource}`);
+    }
   });
 
   async function shutdown(signal) {

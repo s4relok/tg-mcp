@@ -1,4 +1,5 @@
 import { createAuthorizedTelegramClient, syncTelegramMessages } from './telegramSync.js';
+import { createTelegramSyncCoordinator } from './sourceSyncCoordinator.js';
 
 export function createTelegramSyncWorker({
   config,
@@ -7,12 +8,21 @@ export function createTelegramSyncWorker({
   createClient = createAuthorizedTelegramClient,
   syncMessages = syncTelegramMessages,
   afterSync,
+  coordinator,
   setTimer = setTimeout,
   clearTimer = clearTimeout
 }) {
   let stopped = false;
   let timer = null;
   let running = false;
+  const syncCoordinator = coordinator || createTelegramSyncCoordinator({
+    config,
+    store,
+    logger,
+    createClient,
+    syncMessages,
+    afterSync
+  });
 
   async function runOnce() {
     if (running) {
@@ -21,35 +31,19 @@ export function createTelegramSyncWorker({
     }
 
     running = true;
-    let client = null;
-    let result = null;
-    let failedResult = null;
     try {
-      client = await createClient(config);
-      result = await syncMessages({ client, store, config });
+      const result = await syncCoordinator.runDue();
       logger.info(`Telegram sync complete: ${result.messageCount} message(s) from ${result.sourceCount} source(s).`);
+      return result;
     } catch (error) {
       logger.warn(`Telegram sync skipped: ${error.message}`);
-      failedResult = { error: error.message };
+      return { error: error.message };
     } finally {
       running = false;
-      if (client?.disconnect) {
-        await client.disconnect();
-      }
     }
-
-    if (result?.audioMessageCount > 0 && afterSync) {
-      try {
-        await afterSync(result);
-      } catch (error) {
-        logger.warn(`Post-sync audio transcription skipped: ${error.message}`);
-      }
-    }
-
-    return result || failedResult;
   }
 
-  function scheduleNext(delaySeconds = config.telegramSyncIntervalSeconds) {
+  function scheduleNext(delaySeconds = config.sourceSchedulerPollIntervalSeconds || 30) {
     if (stopped) {
       return;
     }
@@ -66,7 +60,7 @@ export function createTelegramSyncWorker({
       return { started: false };
     }
 
-    logger.info(`Telegram background sync enabled every ${config.telegramSyncIntervalSeconds}s.`);
+    logger.info(`Telegram source scheduler enabled with a ${config.sourceSchedulerPollIntervalSeconds || 30}s poll interval.`);
     if (config.telegramSyncOnStart) {
       queueMicrotask(async () => {
         await runOnce();

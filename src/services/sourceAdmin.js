@@ -36,7 +36,12 @@ export async function findSourcesForSelection(store, { query = '', includeDisabl
   };
 }
 
-export async function selectSource(store, { query, tags = [] } = {}) {
+export async function selectSource(store, {
+  query,
+  tags = [],
+  actor = 'cli',
+  sourceManagementService
+} = {}) {
   if (!query || !query.trim()) {
     throw new Error('select-source requires a source query');
   }
@@ -72,19 +77,23 @@ export async function selectSource(store, { query, tags = [] } = {}) {
     };
   }
 
-  await store.setSourceEnabled(selected.sourceId, true);
-  if (tags.length) {
-    await store.setSourceTags(selected.sourceId, tags);
-  }
-
-  const [updated] = await store.listSources({
-    includeDisabled: true,
-    sourceIds: [selected.sourceId]
+  const manager = sourceManagementService || createSourceManagementService({
+    store,
+    config: {}
   });
+  const result = await manager.enableSources({
+    sourceIds: [selected.sourceId],
+    tags,
+    tagMode: 'add',
+    confirmSensitive: true,
+    actor
+  });
+  const updated = result.sources?.[0] || selected;
 
   return {
     status: 'selected',
     query,
-    source: compactSource(updated || selected)
+    source: compactSource(updated)
   };
 }
+import { createSourceManagementService } from './sourceManagement.js';

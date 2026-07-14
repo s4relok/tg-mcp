@@ -5,15 +5,18 @@ import { loadConfigFromProcessEnv } from './config.js';
 import { createReadinessReport } from './services/doctor.js';
 import { setupEnvFile } from './services/envSetup.js';
 import { findSourcesForSelection, selectSource } from './services/sourceAdmin.js';
+import { createSourceManagementService } from './services/sourceManagement.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import {
   createTelegramClient,
+  createAuthorizedTelegramClient,
   createTelegramLoginReport,
   listTelegramSources,
   refreshTelegramSources,
   syncTelegramMessages
 } from './telegram/telegramSync.js';
+import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 
 function usage() {
   console.log(`Usage:
@@ -27,6 +30,9 @@ function usage() {
   npm run cli -- enable-source SOURCE_ID [--tag TAG] [--env-path PATH]
   npm run cli -- disable-source SOURCE_ID [--env-path PATH]
   npm run cli -- set-source-tags SOURCE_ID --tag TAG [--tag TAG] [--env-path PATH]
+  npm run cli -- get-source-settings SOURCE_ID [--env-path PATH]
+  npm run cli -- update-source-settings SOURCE_ID [settings options] [--expected-version N] [--preview]
+  npm run cli -- purge-source-data SOURCE_ID --force [--env-path PATH]
   npm run cli -- sync [--limit N] [--source-id ID] [--env-path PATH]
   npm run cli -- backfill --days N [--env-path PATH]
   npm run cli -- transcribe-audio [--limit N] [--source-id ID] [--env-path PATH]
@@ -36,6 +42,27 @@ function usage() {
 `);
 }
 
+function parseBooleanOption(value, name) {
+  if (!['true', 'false'].includes(String(value).toLowerCase())) {
+    throw new Error(`${name} requires true or false`);
+  }
+  return String(value).toLowerCase() === 'true';
+}
+
+function parseNullableIntegerOption(value, name) {
+  if (value === undefined) {
+    throw new Error(`${name} requires an integer or inherit`);
+  }
+  if (['inherit', 'null'].includes(String(value).toLowerCase())) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`${name} requires an integer or inherit`);
+  }
+  return parsed;
+}
+
 function parseArgs(argv) {
   const command = argv[2];
   const options = {
@@ -43,6 +70,7 @@ function parseArgs(argv) {
     tags: [],
     fromEnvKeys: [],
     setValues: {},
+    sourceSettings: {},
     positional: []
   };
 
@@ -72,6 +100,33 @@ function parseArgs(argv) {
       }
       options.tags.push(argv[index + 1]);
       index += 1;
+    } else if (arg === '--tag-mode' || arg === '--mode') {
+      if (!argv[index + 1]) {
+        throw new Error(`${arg} requires add, remove, or replace`);
+      }
+      options.tagMode = argv[index + 1];
+      index += 1;
+    } else if (arg === '--sync-interval-seconds') {
+      options.sourceSettings.syncIntervalSeconds = parseNullableIntegerOption(argv[index + 1], arg);
+      index += 1;
+    } else if (arg === '--history-depth-days') {
+      options.sourceSettings.historyDepthDays = parseNullableIntegerOption(argv[index + 1], arg);
+      index += 1;
+    } else if (arg === '--priority') {
+      options.sourceSettings.priority = parseNullableIntegerOption(argv[index + 1], arg);
+      index += 1;
+    } else if (arg === '--include-media') {
+      options.sourceSettings.includeMedia = parseBooleanOption(argv[index + 1], arg);
+      index += 1;
+    } else if (arg === '--include-replies') {
+      options.sourceSettings.includeReplies = parseBooleanOption(argv[index + 1], arg);
+      index += 1;
+    } else if (arg === '--include-forwarded-posts') {
+      options.sourceSettings.includeForwardedPosts = parseBooleanOption(argv[index + 1], arg);
+      index += 1;
+    } else if (arg === '--expected-version') {
+      options.expectedVersion = Number.parseInt(argv[index + 1], 10);
+      index += 1;
     } else if (arg === '--env-path' || arg === '--env-file') {
       if (!argv[index + 1]) {
         throw new Error(`${arg} requires a value`);
@@ -98,6 +153,8 @@ function parseArgs(argv) {
       options.production = true;
     } else if (arg === '--force') {
       options.force = true;
+    } else if (arg === '--preview') {
+      options.preview = true;
     } else if (arg === '--include-disabled') {
       options.includeDisabled = true;
     } else if (arg === '--telegram') {
@@ -117,21 +174,24 @@ function parseArgs(argv) {
     throw new Error('--days must be a positive integer');
   }
 
-  return { command, options };
-}
-
-function minDateFromDays(days) {
-  if (!days) {
-    return undefined;
+  if (options.expectedVersion !== undefined && (!Number.isInteger(options.expectedVersion) || options.expectedVersion < 0)) {
+    throw new Error('--expected-version must be a non-negative integer');
   }
 
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return { command, options };
 }
 
 async function withTelegram(config, callback) {
   const rl = readline.createInterface({ input, output });
   let client = null;
   try {
+    const sourceManagementService = createSourceManagementService({ store, config });
+    const syncCoordinator = createTelegramSyncCoordinator({
+      config,
+      store,
+      createClient: createAuthorizedTelegramClient
+    });
+
     client = await createTelegramClient(config, {
       ask: (question) => rl.question(question)
     });
@@ -262,7 +322,9 @@ async function main() {
       const query = options.positional.join(' ');
       const result = await selectSource(store, {
         query,
-        tags: options.tags
+        tags: options.tags,
+        actor: 'cli',
+        sourceManagementService
       });
       console.log(JSON.stringify(result, null, 2));
       if (result.status !== 'selected') {
@@ -276,15 +338,18 @@ async function main() {
       if (!sourceId) {
         throw new Error('enable-source requires SOURCE_ID');
       }
-      const source = await store.setSourceEnabled(sourceId, true);
-      if (!source) {
-        throw new Error(`Unknown source: ${sourceId}. Run refresh-sources first.`);
+      const result = await sourceManagementService.enableSources({
+        sourceIds: [sourceId],
+        tags: options.tags,
+        tagMode: 'add',
+        confirmSensitive: true,
+        preview: Boolean(options.preview),
+        actor: 'cli'
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!['updated', 'unchanged', 'preview'].includes(result.status)) {
+        process.exitCode = 1;
       }
-      if (options.tags.length) {
-        await store.setSourceTags(sourceId, options.tags);
-      }
-      const [updated] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
-      console.log(JSON.stringify({ source: updated }, null, 2));
       return;
     }
 
@@ -293,12 +358,15 @@ async function main() {
       if (!sourceId) {
         throw new Error('disable-source requires SOURCE_ID');
       }
-      const source = await store.setSourceEnabled(sourceId, false);
-      if (!source) {
-        throw new Error(`Unknown source: ${sourceId}. Run refresh-sources first.`);
+      const result = await sourceManagementService.disableSources({
+        sourceIds: [sourceId],
+        preview: Boolean(options.preview),
+        actor: 'cli'
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!['updated', 'unchanged', 'preview'].includes(result.status)) {
+        process.exitCode = 1;
       }
-      const [updated] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
-      console.log(JSON.stringify({ source: updated }, null, 2));
       return;
     }
 
@@ -307,36 +375,108 @@ async function main() {
       if (!sourceId) {
         throw new Error('set-source-tags requires SOURCE_ID');
       }
-      const source = await store.setSourceTags(sourceId, options.tags);
+      const result = await sourceManagementService.setSourceTags({
+        sourceIds: [sourceId],
+        tags: options.tags,
+        tagMode: options.tagMode || 'replace',
+        preview: Boolean(options.preview),
+        actor: 'cli'
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!['updated', 'unchanged', 'preview'].includes(result.status)) {
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    if (command === 'get-source-settings') {
+      const sourceId = options.positional[0];
+      if (!sourceId) {
+        throw new Error('get-source-settings requires SOURCE_ID');
+      }
+      const result = await sourceManagementService.getSourceSettings(sourceId);
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status !== 'ok') {
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    if (command === 'update-source-settings') {
+      const sourceId = options.positional[0];
+      if (!sourceId) {
+        throw new Error('update-source-settings requires SOURCE_ID');
+      }
+      const result = await sourceManagementService.updateSourceSettings({
+        sourceId,
+        settings: options.sourceSettings,
+        expectedVersion: options.expectedVersion,
+        preview: Boolean(options.preview),
+        actor: 'cli'
+      });
+      console.log(JSON.stringify(result, null, 2));
+      if (!['updated', 'unchanged', 'preview'].includes(result.status)) {
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    if (command === 'purge-source-data') {
+      const sourceId = options.positional[0];
+      if (!sourceId) {
+        throw new Error('purge-source-data requires SOURCE_ID');
+      }
+      if (!options.force) {
+        throw new Error('purge-source-data requires --force');
+      }
+      const [source] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
       if (!source) {
         throw new Error(`Unknown source: ${sourceId}. Run refresh-sources first.`);
       }
-      const [updated] = await store.listSources({ includeDisabled: true, sourceIds: [sourceId] });
-      console.log(JSON.stringify({ source: updated }, null, 2));
+      if (source.enabled) {
+        throw new Error('Disable the source before purging its stored data.');
+      }
+      const result = await store.purgeSourceData(sourceId);
+      if (store.appendSourceAudit) {
+        await store.appendSourceAudit({
+          actor: 'cli',
+          action: 'purge_data',
+          sourceId,
+          before: { sourceId, enabled: false, tags: source.tags || [], settings: source.settings || {} },
+          after: { sourceId, enabled: false, tags: source.tags || [], settings: source.settings || {} },
+          metadata: {
+            deletedMessages: result.deletedMessages,
+            deletedDigests: result.deletedDigests
+          },
+          createdAt: new Date()
+        });
+      }
+      console.log(JSON.stringify({ status: 'purged', sourceId, ...result }, null, 2));
       return;
     }
 
     if (command === 'sync') {
-      const result = await withTelegram(config, (client) => syncTelegramMessages({
-        client,
-        store,
-        config,
+      const result = await syncCoordinator.run({
         sourceIds: options.sourceIds,
-        limit: options.limit
-      }));
+        limit: options.limit,
+        reason: 'cli',
+        actor: 'cli'
+      });
       console.log(JSON.stringify(result, null, 2));
       return;
     }
 
     if (command === 'backfill') {
-      const result = await withTelegram(config, (client) => syncTelegramMessages({
-        client,
-        store,
-        config,
+      if (!options.days) {
+        throw new Error('backfill requires --days N');
+      }
+      const result = await syncCoordinator.run({
         sourceIds: options.sourceIds,
         limit: options.limit,
-        minDate: minDateFromDays(options.days)
-      }));
+        backfillDays: options.days,
+        reason: 'cli-backfill',
+        actor: 'cli'
+      });
       console.log(JSON.stringify(result, null, 2));
       return;
     }

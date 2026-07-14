@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
+import { effectiveSourceSettings } from '../services/sourceManagement.js';
+
 const require = createRequire(import.meta.url);
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
@@ -143,7 +145,11 @@ export function normalizeTelegramMessage(message, source) {
     entities: message.entities || [],
     raw: {
       groupedId: message.groupedId?.toString?.() || null,
-      post: Boolean(message.post)
+      post: Boolean(message.post),
+      forwarded: Boolean(message.fwdFrom || message.forward || message.forwardInfo),
+      forwardedFromId: toStringId(
+        message.fwdFrom?.fromId || message.forward?.fromId || message.forwardInfo?.fromId
+      )
     }
   };
 
@@ -158,8 +164,18 @@ export function normalizeTelegramMessage(message, source) {
   return normalized;
 }
 
-function hasSyncableMessageContent(message) {
-  return Boolean(message.message || normalizeTelegramMedia(message));
+function isForwardedMessage(message) {
+  return Boolean(message.fwdFrom || message.forward || message.forwardInfo);
+}
+
+function hasSyncableMessageContent(message, settings) {
+  if (!settings.includeReplies && message.replyTo?.replyToMsgId) {
+    return false;
+  }
+  if (!settings.includeForwardedPosts && isForwardedMessage(message)) {
+    return false;
+  }
+  return Boolean(message.message || (settings.includeMedia && normalizeTelegramMedia(message)));
 }
 
 export async function createTelegramClient(config, prompts) {
@@ -233,17 +249,15 @@ export async function listTelegramSources({ client, allowedSourceIds = [] }) {
     .filter((source) => source.sourceId && source.title);
 }
 
-async function selectedSourceIds({ store, config, sourceIds = [] }) {
-  if (sourceIds.length) {
-    return sourceIds.map(String);
-  }
-
-  if ((config.allowedSourceIds || []).length) {
-    return config.allowedSourceIds.map(String);
-  }
-
-  const enabledSources = await store.listSources();
-  return enabledSources.map((source) => source.sourceId);
+async function selectedSources({ store, config, sourceIds = [] }) {
+  const requestedIds = [...new Set((sourceIds || []).map(String))];
+  const enabledSources = await store.listSources({
+    ...(requestedIds.length ? { sourceIds: requestedIds } : {})
+  });
+  const ceiling = new Set((config.allowedSourceIds || []).map(String));
+  return ceiling.size
+    ? enabledSources.filter((source) => ceiling.has(source.sourceId))
+    : enabledSources;
 }
 
 export async function refreshTelegramSources({ client, store, config }) {
@@ -255,54 +269,80 @@ export async function refreshTelegramSources({ client, store, config }) {
 
   for (const source of sources) {
     await store.upsertSource(source, {
-      preserveEnabled: explicitAllowed.length === 0,
+      preserveEnabled: true,
       preserveTags: true
     });
   }
 
+  const storedSources = await store.listSources({
+    includeDisabled: true,
+    sourceIds: sources.map((source) => source.sourceId)
+  });
+
   return {
-    sourceCount: sources.length,
-    selectedSourceCount: sources.filter((source) => source.enabled).length,
-    sources
+    sourceCount: storedSources.length,
+    selectedSourceCount: storedSources.filter((source) => source.enabled).length,
+    sources: storedSources
   };
 }
 
-export async function syncTelegramMessages({ client, store, config, sourceIds, limit, minDate } = {}) {
-  const allowed = new Set(await selectedSourceIds({ store, config, sourceIds }));
-  if (!allowed.size) {
-    throw new Error('No selected Telegram sources. Set ALLOWED_SOURCE_IDS or run refresh-sources and enable-source first.');
+export async function syncTelegramMessages({
+  client,
+  store,
+  config,
+  sourceIds,
+  limit,
+  minDate,
+  now = new Date()
+} = {}) {
+  const selected = await selectedSources({ store, config, sourceIds });
+  if (!selected.length) {
+    throw new Error('No enabled Telegram sources are eligible for sync. Enable a source and check ALLOWED_SOURCE_IDS.');
   }
 
-  const dbSources = await store.listSources({ includeDisabled: true, sourceIds: [...allowed] });
-  const dbSourceById = new Map(dbSources.map((source) => [source.sourceId, source]));
-  const sources = await listTelegramSources({ client, allowedSourceIds: [...allowed] });
+  const allowed = new Set(selected.map((source) => source.sourceId));
+  const dbSourceById = new Map(selected.map((source) => [source.sourceId, source]));
+  const sources = (await listTelegramSources({ client, allowedSourceIds: [...allowed] }))
+    .filter((source) => source.enabled);
 
   for (const source of sources) {
-    await store.upsertSource(source, { preserveTags: true });
+    await store.upsertSource(source, { preserveEnabled: true, preserveTags: true });
   }
 
-  const enabledSources = sources.filter((source) => source.enabled);
   let messageCount = 0;
   let audioMessageCount = 0;
   const perSource = [];
 
-  for (const source of enabledSources) {
+  for (const source of sources) {
     const messages = [];
-    const iterOptions = { limit: limit || config.telegramSyncLimit };
     const dbSource = dbSourceById.get(source.sourceId);
+    const { settings } = effectiveSourceSettings(dbSource, config);
+    const requestedLimit = limit || config.telegramSyncLimit;
+    const effectiveLimit = Math.min(requestedLimit, config.telegramSyncMaxLimit || 1000);
+    const iterOptions = { limit: effectiveLimit };
     const lastSyncedMessageId = Number(dbSource?.lastSyncedMessageId || 0);
     if (!minDate && lastSyncedMessageId > 0) {
       iterOptions.minId = lastSyncedMessageId;
     }
 
+    const historyMinDate = new Date(
+      now.getTime() - settings.historyDepthDays * 24 * 60 * 60 * 1000
+    );
+    const effectiveMinDate = minDate && minDate > historyMinDate ? minDate : historyMinDate;
+
     for await (const message of client.iterMessages(source.sourceId, iterOptions)) {
-      if (!hasSyncableMessageContent(message)) {
+      if (!hasSyncableMessageContent(message, settings)) {
         continue;
       }
 
       const normalized = normalizeTelegramMessage(message, source);
-      if (minDate && normalized.date < minDate) {
+      if (normalized.date < effectiveMinDate) {
         continue;
+      }
+
+      if (!settings.includeMedia) {
+        delete normalized.media;
+        delete normalized.transcription;
       }
 
       messages.push(normalized);
@@ -333,7 +373,7 @@ export async function syncTelegramMessages({ client, store, config, sourceIds, l
   }
 
   return {
-    sourceCount: enabledSources.length,
+    sourceCount: sources.length,
     messageCount,
     audioMessageCount,
     sources: perSource

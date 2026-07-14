@@ -303,6 +303,9 @@ export class TelegramDigestService {
         type: source.type || 'unknown',
         enabled: source.enabled !== false,
         tags: source.tags || [],
+        settings: source.settings || {},
+        settingsVersion: source.settingsVersion || 0,
+        nextSyncAt: source.nextSyncAt ? toIso(source.nextSyncAt) : null,
         lastSyncedMessageId: source.lastSyncedMessageId || null,
         lastSyncedAt: source.lastSyncedAt ? toIso(source.lastSyncedAt) : null,
         lastSyncMessageCount: source.lastSyncMessageCount ?? null,
@@ -419,7 +422,7 @@ export class TelegramDigestService {
       throw new Error('sourceId is required');
     }
 
-    const { sources } = await this.listSources({ includeDisabled: true, sourceIds: [sourceId] });
+    const { sources } = await this.listSources({ sourceIds: [sourceId] });
     const source = sources[0] || null;
     if (!source) {
       return {

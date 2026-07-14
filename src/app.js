@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { metadataHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/metadata.js';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
@@ -7,11 +8,21 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { BadRequestError, isHttpError } from './http/errors.js';
 import { registerApiRoutes } from './http/apiRoutes.js';
 import { requireAppToken } from './http/auth.js';
+import {
+  createOAuthBearerAuth,
+  createProtectedResourceMetadata,
+  oauthSessionPrincipal
+} from './http/oauth.js';
 import { createOpenApiDocument } from './http/openapi.js';
 import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramMcpServer } from './mcp/server.js';
 import { createReadinessReport } from './services/doctor.js';
+import {
+  createSourceManagementService,
+  SourceManagementError
+} from './services/sourceManagement.js';
 import { selectSource } from './services/sourceAdmin.js';
+import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 import { createAuthorizedTelegramClient, refreshTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
 
 function toArray(value) {
@@ -42,30 +53,24 @@ function toPositiveInteger(value) {
   return parsed;
 }
 
-function minDateFromBackfillDays(days, now = new Date()) {
-  if (!days) {
-    return undefined;
+function sourceSettingsFromBody(body = {}) {
+  if (body.settings) {
+    return body.settings;
   }
-  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-}
-
-function publicSource(source) {
-  return {
-    sourceId: source.sourceId,
-    title: source.title,
-    username: source.username || null,
-    type: source.type || 'unknown',
-    enabled: source.enabled !== false,
-    tags: source.tags || []
-  };
-}
-
-async function sourceById(store, sourceId) {
-  const [source] = await store.listSources({
-    includeDisabled: true,
-    sourceIds: [sourceId]
-  });
-  return source || null;
+  const settings = {};
+  for (const key of [
+    'syncIntervalSeconds',
+    'historyDepthDays',
+    'includeMedia',
+    'includeReplies',
+    'includeForwardedPosts',
+    'priority'
+  ]) {
+    if (Object.hasOwn(body, key)) {
+      settings[key] = body[key];
+    }
+  }
+  return settings;
 }
 
 function jsonRpcError(res, status, message) {
@@ -79,12 +84,24 @@ function jsonRpcError(res, status, message) {
   });
 }
 
-export function createApp({ config, store, digestService, telegramAdmin = {}, audioTranscriptionAdmin = {} }) {
+export function createApp({
+  config,
+  store,
+  digestService,
+  sourceManagementService,
+  syncCoordinator,
+  oauthTokenVerifier,
+  telegramAdmin = {},
+  audioTranscriptionAdmin = {}
+}) {
   const app = createMcpExpressApp({
     host: config.host,
     allowedHosts: config.allowedHosts
   });
   const auth = requireAppToken(config);
+  const oauthAuth = config.oauthEnabled
+    ? createOAuthBearerAuth(config, { verifier: oauthTokenVerifier })
+    : null;
   const transports = new Map();
   const createTelegramClient = telegramAdmin.createClient || createAuthorizedTelegramClient;
   const refreshSources = telegramAdmin.refreshSources || refreshTelegramSources;
@@ -104,6 +121,32 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
     });
     return worker.runOnce({ ...args, force: args.force ?? true });
   });
+  const manageSources = sourceManagementService || createSourceManagementService({ store, config, now });
+  const sourceSync = syncCoordinator || createTelegramSyncCoordinator({
+    config,
+    store,
+    createClient: createTelegramClient,
+    syncMessages,
+    now,
+    afterSync: async (result) => {
+      if (result.audioMessageCount > 0) {
+        return runAudioTranscriptions({
+          limit: config.audioTranscriptionBatchSize,
+          force: false
+        });
+      }
+      return null;
+    }
+  });
+
+  if (config.oauthEnabled) {
+    const metadata = createProtectedResourceMetadata(config);
+    const pathSpecificMetadataPath = new URL(config.oauthProtectedResourceMetadataUrl).pathname;
+    app.use(pathSpecificMetadataPath, metadataHandler(metadata));
+    if (pathSpecificMetadataPath !== '/.well-known/oauth-protected-resource') {
+      app.use('/.well-known/oauth-protected-resource', metadataHandler(metadata));
+    }
+  }
 
   app.get('/health', async (_req, res) => {
     try {
@@ -114,6 +157,8 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
         storage,
         mcpPath: config.mcpPath,
         chatGptMcpPath: config.chatGptMcpPath || null,
+        oauthMcpPath: config.oauthEnabled ? config.oauthMcpPath : null,
+        oauthResource: config.oauthEnabled ? config.oauthResource : null,
         restBasePath: config.restBasePath,
         openApiPath: config.openApiPath
       });
@@ -162,7 +207,9 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
       }
       const result = await selectSource(store, {
         query: String(req.body?.query || ''),
-        tags: toArray(req.body?.tags ?? req.body?.tag)
+        tags: toArray(req.body?.tags ?? req.body?.tag),
+        actor: 'admin',
+        sourceManagementService: manageSources
       });
       const status = result.status === 'selected'
         ? 200
@@ -177,21 +224,20 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
 
   app.post('/admin/sources/:sourceId/enable', auth, async (req, res, next) => {
     try {
-      const source = await store.setSourceEnabled(req.params.sourceId, true);
-      if (!source) {
+      const result = await manageSources.enableSources({
+        sourceIds: [req.params.sourceId],
+        tags: toArray(req.body?.tags ?? req.body?.tag),
+        tagMode: 'add',
+        confirmSensitive: true,
+        actor: 'admin'
+      });
+      if (result.status === 'not_found') {
         res.status(404).json({ status: 'not_found', sourceId: req.params.sourceId });
         return;
       }
-
-      const tags = toArray(req.body?.tags ?? req.body?.tag);
-      if (tags.length) {
-        await store.setSourceTags(req.params.sourceId, tags);
-      }
-
-      const updated = await sourceById(store, req.params.sourceId);
       res.json({
         status: 'enabled',
-        source: publicSource(updated || source)
+        source: result.sources[0]
       });
     } catch (caught) {
       next(caught);
@@ -200,16 +246,17 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
 
   app.post('/admin/sources/:sourceId/disable', auth, async (req, res, next) => {
     try {
-      const source = await store.setSourceEnabled(req.params.sourceId, false);
-      if (!source) {
+      const result = await manageSources.disableSources({
+        sourceIds: [req.params.sourceId],
+        actor: 'admin'
+      });
+      if (result.status === 'not_found') {
         res.status(404).json({ status: 'not_found', sourceId: req.params.sourceId });
         return;
       }
-
-      const updated = await sourceById(store, req.params.sourceId);
       res.json({
         status: 'disabled',
-        source: publicSource(updated || source)
+        source: result.sources[0]
       });
     } catch (caught) {
       next(caught);
@@ -218,17 +265,45 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
 
   app.post('/admin/sources/:sourceId/tags', auth, async (req, res, next) => {
     try {
-      const source = await store.setSourceTags(req.params.sourceId, toArray(req.body?.tags ?? req.body?.tag));
-      if (!source) {
+      const result = await manageSources.setSourceTags({
+        sourceIds: [req.params.sourceId],
+        tags: toArray(req.body?.tags ?? req.body?.tag),
+        tagMode: req.body?.mode || 'replace',
+        actor: 'admin'
+      });
+      if (result.status === 'not_found') {
         res.status(404).json({ status: 'not_found', sourceId: req.params.sourceId });
         return;
       }
-
-      const updated = await sourceById(store, req.params.sourceId);
       res.json({
         status: 'tagged',
-        source: publicSource(updated || source)
+        source: result.sources[0]
       });
+    } catch (caught) {
+      next(caught);
+    }
+  });
+
+  app.get('/admin/sources/:sourceId/settings', auth, async (req, res, next) => {
+    try {
+      const result = await manageSources.getSourceSettings(req.params.sourceId);
+      res.status(result.status === 'not_found' ? 404 : 200).json(result);
+    } catch (caught) {
+      next(caught);
+    }
+  });
+
+  app.patch('/admin/sources/:sourceId/settings', auth, async (req, res, next) => {
+    try {
+      const result = await manageSources.updateSourceSettings({
+        sourceId: req.params.sourceId,
+        settings: sourceSettingsFromBody(req.body || {}),
+        expectedVersion: req.body?.expectedVersion,
+        preview: Boolean(req.body?.preview),
+        actor: 'admin'
+      });
+      const status = result.status === 'not_found' ? 404 : result.status === 'conflict' ? 409 : 200;
+      res.status(status).json(result);
     } catch (caught) {
       next(caught);
     }
@@ -248,38 +323,25 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
   });
 
   app.post('/admin/sync', auth, async (req, res, next) => {
-    let client = null;
     try {
       const body = req.body || {};
       const backfillDays = toPositiveInteger(body.backfillDays);
-      client = await createTelegramClient(config);
-      const result = await syncMessages({
-        client,
-        store,
-        config,
+      const result = await sourceSync.run({
         sourceIds: toArray(body.sourceIds ?? body.sourceId),
         limit: toPositiveInteger(body.limit),
-        minDate: minDateFromBackfillDays(backfillDays, now())
+        backfillDays,
+        reason: 'admin',
+        actor: 'admin'
       });
-      const audioTranscription = result.audioMessageCount > 0
-        ? await runAudioTranscriptions({
-          limit: config.audioTranscriptionBatchSize,
-          force: false
-        })
-        : null;
 
       res.json({
-        status: 'ok',
+        status: result.status,
         backfillDays: backfillDays || null,
-        audioTranscription,
+        audioTranscription: result.afterSyncResult,
         ...result
       });
     } catch (caught) {
       next(caught);
-    } finally {
-      if (client?.disconnect) {
-        await client.disconnect();
-      }
     }
   });
 
@@ -330,24 +392,50 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
 
   registerApiRoutes(app, { config, digestService, auth });
 
-  function registerMcpRoutes(routePath, routeAuth) {
+  function registerMcpRoutes(routePath, routeAuth, access = {}) {
+    const getSession = (sessionId, req) => {
+      if (!sessionId || !transports.has(sessionId)) {
+        return null;
+      }
+      const session = transports.get(sessionId);
+      if (session.routePath !== routePath) {
+        return null;
+      }
+      if (access.oauth && session.principal !== oauthSessionPrincipal(req.auth)) {
+        return null;
+      }
+      return session;
+    };
+
     app.post(routePath, routeAuth, async (req, res) => {
       const sessionId = req.get('mcp-session-id');
 
       try {
-        if (sessionId && transports.has(sessionId)) {
-          await transports.get(sessionId).transport.handleRequest(req, res, req.body);
+        const session = getSession(sessionId, req);
+        if (session) {
+          await session.transport.handleRequest(req, res, req.body);
           return;
         }
 
         if (!sessionId && isInitializeRequest(req.body)) {
-          const mcpServer = createTelegramMcpServer({ digestService, config });
+          const mcpServer = createTelegramMcpServer({
+            digestService,
+            config,
+            sourceManagementService: manageSources,
+            syncCoordinator: sourceSync,
+            access
+          });
           let generatedSessionId = null;
           const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (newSessionId) => {
               generatedSessionId = newSessionId;
-              transports.set(newSessionId, { transport, mcpServer });
+              transports.set(newSessionId, {
+                transport,
+                mcpServer,
+                routePath,
+                principal: access.oauth ? oauthSessionPrincipal(req.auth) : ''
+              });
             }
           });
 
@@ -375,31 +463,61 @@ export function createApp({ config, store, digestService, telegramAdmin = {}, au
 
     app.get(routePath, routeAuth, async (req, res) => {
       const sessionId = req.get('mcp-session-id');
-      if (!sessionId || !transports.has(sessionId)) {
+      const session = getSession(sessionId, req);
+      if (!session) {
         res.status(400).send('Invalid or missing MCP session id.');
         return;
       }
 
-      await transports.get(sessionId).transport.handleRequest(req, res);
+      await session.transport.handleRequest(req, res);
     });
 
     app.delete(routePath, routeAuth, async (req, res) => {
       const sessionId = req.get('mcp-session-id');
-      if (!sessionId || !transports.has(sessionId)) {
+      const session = getSession(sessionId, req);
+      if (!session) {
         res.status(400).send('Invalid or missing MCP session id.');
         return;
       }
 
-      await transports.get(sessionId).transport.handleRequest(req, res);
+      await session.transport.handleRequest(req, res);
     });
   }
 
-  registerMcpRoutes(config.mcpPath, auth);
+  const hasOwnerToken = Boolean(config.appAuthToken);
+  registerMcpRoutes(config.mcpPath, auth, {
+    allowDisabledSources: hasOwnerToken,
+    manageSources: hasOwnerToken && config.mcpSourceManagementEnabled,
+    runSourceSync: hasOwnerToken && config.mcpSourceManagementEnabled,
+    actor: 'mcp:owner-token'
+  });
   if (config.chatGptMcpPath && config.chatGptMcpPath !== config.mcpPath) {
-    registerMcpRoutes(config.chatGptMcpPath, allowRequest);
+    registerMcpRoutes(config.chatGptMcpPath, allowRequest, {
+      allowDisabledSources: false,
+      manageSources: false,
+      runSourceSync: false,
+      actor: 'mcp:read-only'
+    });
+  }
+  if (config.oauthEnabled) {
+    registerMcpRoutes(config.oauthMcpPath, oauthAuth, {
+      oauth: true,
+      allowDisabledSources: config.mcpSourceManagementEnabled,
+      manageSources: config.mcpSourceManagementEnabled,
+      runSourceSync: config.mcpSourceManagementEnabled,
+      actor: 'mcp:oauth'
+    });
   }
 
   app.use((error, _req, res, _next) => {
+    if (error instanceof SourceManagementError) {
+      res.status(400).json({
+        error: error.code,
+        message: error.message,
+        details: error.details
+      });
+      return;
+    }
     if (isHttpError(error)) {
       res.status(error.statusCode).json({
         error: error.code,
