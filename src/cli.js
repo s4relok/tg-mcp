@@ -185,13 +185,6 @@ async function withTelegram(config, callback) {
   const rl = readline.createInterface({ input, output });
   let client = null;
   try {
-    const sourceManagementService = createSourceManagementService({ store, config });
-    const syncCoordinator = createTelegramSyncCoordinator({
-      config,
-      store,
-      createClient: createAuthorizedTelegramClient
-    });
-
     client = await createTelegramClient(config, {
       ask: (question) => rl.question(question)
     });
@@ -282,6 +275,13 @@ async function main() {
       }
       return;
     }
+
+    const sourceManagementService = createSourceManagementService({ store, config });
+    const syncCoordinator = createTelegramSyncCoordinator({
+      config,
+      store,
+      createClient: createAuthorizedTelegramClient
+    });
 
     if (command === 'list-sources') {
       const sources = await withTelegram(config, (client) => listTelegramSources({
