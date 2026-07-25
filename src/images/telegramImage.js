@@ -47,9 +47,16 @@ export async function downloadTelegramImageMessage({
 
   let thumb;
   if (photo) {
-    thumb = selectPhotoSize(photo, maxFileBytes);
-    if (!thumb) {
+    const selectedSize = selectPhotoSize(photo, maxFileBytes);
+    if (!selectedSize) {
       throw new Error('No Telegram photo size fits the configured image limit');
+    }
+    // GramJS does not accept a PhotoSizeProgressive object as `thumb`, even
+    // though it returns one from Message.photo.sizes. Its string type works
+    // for every supported Telegram photo size and avoids an empty buffer.
+    thumb = selectedSize.type;
+    if (!thumb) {
+      throw new Error('Selected Telegram photo size has no downloadable type');
     }
   } else if ((metadata.media?.size || 0) > maxFileBytes) {
     throw new Error(`Image document exceeds the ${maxFileBytes} byte limit`);

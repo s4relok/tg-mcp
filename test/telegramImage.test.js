@@ -5,8 +5,8 @@ import { downloadTelegramImageMessage } from '../src/images/telegramImage.js';
 
 test('Telegram photo download selects the largest size below the configured byte limit', async () => {
   let selectedThumb = null;
-  const small = { w: 640, h: 360, size: 200000 };
-  const large = { w: 1920, h: 1080, size: 2000000 };
+  const small = { type: 'm', w: 640, h: 360, size: 200000 };
+  const large = { type: 'y', w: 1920, h: 1080, size: 2000000 };
   const result = await downloadTelegramImageMessage({
     client: {},
     message: {
@@ -22,7 +22,7 @@ test('Telegram photo download selects the largest size below the configured byte
     maxFileBytes: 500000
   });
 
-  assert.equal(selectedThumb, small);
+  assert.equal(selectedThumb, 'm');
   assert.equal(result.mimeType, 'image/jpeg');
   assert.equal(result.buffer.toString(), 'photo');
 });
