@@ -17,6 +17,7 @@ export class MongoTelegramStore {
     this.digests = db.collection('tg_digests');
     this.syncState = db.collection('sync_state');
     this.sourceAudit = db.collection('tg_source_audit');
+    this.mediaCache = db.collection('tg_media_cache');
   }
 
   async ensureIndexes() {
@@ -41,7 +42,9 @@ export class MongoTelegramStore {
       this.digests.createIndex({ periodStart: 1, periodEnd: 1, sourceIds: 1 }),
       this.syncState.createIndex({ key: 1 }, { unique: true }),
       this.sourceAudit.createIndex({ sourceId: 1, createdAt: -1 }),
-      this.sourceAudit.createIndex({ createdAt: -1 })
+      this.sourceAudit.createIndex({ createdAt: -1 }),
+      this.mediaCache.createIndex({ sourceId: 1, messageId: 1 }, { unique: true }),
+      this.mediaCache.createIndex({ expiresAt: 1 })
     ]);
     await this.ensureMessageTextSearchIndex();
   }
@@ -291,9 +294,10 @@ export class MongoTelegramStore {
   }
 
   async purgeSourceData(sourceId) {
-    const [messagesResult, digestsResult] = await Promise.all([
+    const [messagesResult, digestsResult, cacheResult] = await Promise.all([
       this.messages.deleteMany({ sourceId }),
-      this.digests.deleteMany({ sourceIds: sourceId })
+      this.digests.deleteMany({ sourceIds: sourceId }),
+      this.mediaCache.deleteMany({ sourceId })
     ]);
     const source = await this.sources.findOneAndUpdate(
       { sourceId },
@@ -314,7 +318,8 @@ export class MongoTelegramStore {
     return {
       source,
       deletedMessages: messagesResult.deletedCount,
-      deletedDigests: digestsResult.deletedCount
+      deletedDigests: digestsResult.deletedCount,
+      deletedCacheEntries: cacheResult.deletedCount
     };
   }
 
@@ -640,6 +645,57 @@ export class MongoTelegramStore {
     }).toArray();
     const byId = new Map(messages.map((message) => [message.messageId, message]));
     return messageIds.map((messageId) => byId.get(messageId)).filter(Boolean);
+  }
+
+  async getMediaCacheEntries({ sourceId, messageIds = [] } = {}) {
+    const filter = { sourceId };
+    if (messageIds.length) {
+      filter.messageId = { $in: messageIds };
+    }
+    const entries = await this.mediaCache.find(filter).toArray();
+    if (!messageIds.length) {
+      return entries;
+    }
+    const byId = new Map(entries.map((entry) => [entry.messageId, entry]));
+    return messageIds.map((messageId) => byId.get(messageId)).filter(Boolean);
+  }
+
+  async upsertMediaCache(entry) {
+    return this.mediaCache.findOneAndUpdate(
+      {
+        sourceId: entry.sourceId,
+        messageId: entry.messageId
+      },
+      {
+        $set: {
+          ...entry,
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          createdAt: new Date()
+        }
+      },
+      {
+        upsert: true,
+        returnDocument: 'after'
+      }
+    );
+  }
+
+  async deleteMediaCacheEntry({ sourceId, messageId }) {
+    return this.mediaCache.deleteOne({ sourceId, messageId });
+  }
+
+  async listExpiredMediaCache({ now = new Date(), limit = 100 } = {}) {
+    return this.mediaCache
+      .find({ expiresAt: { $lte: now } })
+      .sort({ expiresAt: 1 })
+      .limit(limit)
+      .toArray();
+  }
+
+  async listAllMediaCacheEntries() {
+    return this.mediaCache.find({}).toArray();
   }
 
   async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {

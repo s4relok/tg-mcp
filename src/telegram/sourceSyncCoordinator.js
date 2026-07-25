@@ -36,6 +36,7 @@ export function createTelegramSyncCoordinator({
   logger = console,
   createClient = createAuthorizedTelegramClient,
   syncMessages = syncTelegramMessages,
+  imageService,
   afterSync,
   now = () => new Date()
 }) {
@@ -59,6 +60,8 @@ export function createTelegramSyncCoordinator({
     sourceIds = [],
     limit,
     backfillDays,
+    cacheImages = false,
+    imageLimit,
     dueOnly = false,
     reason = dueOnly ? 'scheduler' : 'manual',
     actor = reason
@@ -73,6 +76,13 @@ export function createTelegramSyncCoordinator({
     const requestedBackfillDays = backfillDays === undefined || backfillDays === null
       ? null
       : positiveInteger(backfillDays, 'backfillDays', { max: 3650 });
+    const shouldCacheImages = !dueOnly && cacheImages === true;
+    const effectiveImageLimit = shouldCacheImages
+      ? positiveInteger(imageLimit, 'imageLimit', {
+        fallback: config.mcpImageCacheMaxItemsPerSync || 100,
+        max: config.mcpImageCacheMaxItemsPerSync || 100
+      })
+      : null;
     const requestedIds = [...new Set(sourceIds.map(String))];
     const candidates = await resolveCandidates({ sourceIds: requestedIds, dueOnly });
     const candidateById = new Map(candidates.map((source) => [source.sourceId, source]));
@@ -107,6 +117,7 @@ export function createTelegramSyncCoordinator({
     let client = null;
     let clientError = null;
     const results = [];
+    const imageCacheResults = [];
     const errors = [];
 
     async function telegramClient() {
@@ -162,6 +173,37 @@ export function createTelegramSyncCoordinator({
             now: attemptTime
           });
           results.push(result);
+          if (shouldCacheImages) {
+            if (!imageService || typeof imageService.cacheSourceImages !== 'function') {
+              imageCacheResults.push({
+                status: 'error',
+                sourceId: source.sourceId,
+                requested: 0,
+                cached: 0,
+                alreadyCached: 0,
+                failed: 0,
+                error: 'Image cache service is not configured'
+              });
+            } else {
+              try {
+                imageCacheResults.push(await imageService.cacheSourceImages({
+                  sourceId: source.sourceId,
+                  client: await telegramClient(),
+                  limit: effectiveImageLimit
+                }));
+              } catch (caught) {
+                imageCacheResults.push({
+                  status: 'error',
+                  sourceId: source.sourceId,
+                  requested: 0,
+                  cached: 0,
+                  alreadyCached: 0,
+                  failed: 0,
+                  error: caught instanceof Error ? caught.message : String(caught)
+                });
+              }
+            }
+          }
           await store.completeSourceSync(source.sourceId, {
             now: now(),
             nextSyncAt,
@@ -202,6 +244,18 @@ export function createTelegramSyncCoordinator({
       startedAt: startedAt.toISOString(),
       completedAt: now().toISOString(),
       requestedBackfillDays,
+      cacheImages: shouldCacheImages,
+      imageLimit: effectiveImageLimit,
+      imageCache: {
+        requested: imageCacheResults.reduce((sum, item) => sum + (item.requested || 0), 0),
+        cached: imageCacheResults.reduce((sum, item) => sum + (item.cached || 0), 0),
+        alreadyCached: imageCacheResults.reduce(
+          (sum, item) => sum + (item.alreadyCached || 0),
+          0
+        ),
+        failed: imageCacheResults.reduce((sum, item) => sum + (item.failed || 0), 0),
+        sources: imageCacheResults
+      },
       afterSyncResult,
       ...summary,
       skipped,

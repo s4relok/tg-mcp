@@ -74,6 +74,24 @@ function createSourceMutationHarness() {
   };
 }
 
+function createMediaCacheHarness() {
+  const operations = [];
+  const mediaCache = {
+    findOneAndUpdate: async (...args) => {
+      operations.push(args);
+      return { ...args[1].$set };
+    }
+  };
+  const db = {
+    databaseName: 'test',
+    collection: (name) => name === 'tg_media_cache' ? mediaCache : {}
+  };
+  return {
+    store: new MongoTelegramStore(db, { close: async () => {} }),
+    operations
+  };
+}
+
 test('upsertSource does not set enabled in both $set and $setOnInsert', async () => {
   const { store, operations } = createStoreHarness();
 
@@ -178,4 +196,28 @@ test('listSourcesDueForSync sorts with the effective default priority', async ()
     title: 1
   });
   assert.deepEqual(pipeline[3], { $limit: 5 });
+});
+
+test('upsertMediaCache stores fixed cache metadata outside message documents', async () => {
+  const { store, operations } = createMediaCacheHarness();
+  const entry = {
+    sourceId: 'work',
+    messageId: 7,
+    relativePath: 'ab/cd/image.jpg',
+    mimeType: 'image/jpeg',
+    size: 1234,
+    sha256: 'digest',
+    cachedAt: new Date('2026-07-25T10:00:00.000Z'),
+    expiresAt: new Date('2026-08-24T10:00:00.000Z')
+  };
+
+  await store.upsertMediaCache(entry);
+
+  const [filter, update, options] = operations[0];
+  assert.deepEqual(filter, { sourceId: 'work', messageId: 7 });
+  assert.equal(update.$set.relativePath, entry.relativePath);
+  assert.equal(update.$set.expiresAt, entry.expiresAt);
+  assert.ok(update.$setOnInsert.createdAt instanceof Date);
+  assert.equal(options.upsert, true);
+  assert.equal(options.returnDocument, 'after');
 });

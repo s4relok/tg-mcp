@@ -2,6 +2,8 @@ import { assertSafeRuntimeConfig, loadConfigFromProcessEnv } from './config.js';
 import { createApp } from './app.js';
 import { createTelegramDigestService } from './services/digestService.js';
 import { createSourceManagementService } from './services/sourceManagement.js';
+import { createImageCache, startImageCacheJanitor } from './images/imageCache.js';
+import { createTelegramImageService } from './images/imageService.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import { startAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
@@ -15,9 +17,20 @@ async function main() {
   const digestService = createTelegramDigestService(store);
   const sourceManagementService = createSourceManagementService({ store, config });
   const audioTranscriptionWorker = startAudioTranscriptionWorker({ config, store });
+  const imageCache = createImageCache({ config, store });
+  const imageService = createTelegramImageService({
+    config,
+    store,
+    cache: imageCache
+  });
+  const imageCacheJanitor = startImageCacheJanitor({
+    cache: imageCache,
+    config
+  });
   const syncCoordinator = createTelegramSyncCoordinator({
     config,
     store,
+    imageService,
     afterSync: async () => {
       await audioTranscriptionWorker.runOnce({
         limit: config.audioTranscriptionBatchSize
@@ -29,6 +42,7 @@ async function main() {
     store,
     digestService,
     sourceManagementService,
+    imageService,
     syncCoordinator,
     audioTranscriptionAdmin: {
       runOnce: audioTranscriptionWorker.runOnce
@@ -53,6 +67,7 @@ async function main() {
     server.close(async () => {
       await syncWorker.stop();
       await audioTranscriptionWorker.stop();
+      await imageCacheJanitor.stop();
       await slashBot.stop();
       await store.close();
       process.exit(0);

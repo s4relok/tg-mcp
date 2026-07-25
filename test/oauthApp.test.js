@@ -96,6 +96,7 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     mcpManualTranscriptionMaxLimit: 10,
     mcpImageToolsEnabled: true,
     mcpImageListMaxLimit: 100,
+    mcpImageGetMaxItems: 5,
     sourceMutationBatchLimit: 25,
     telegramSyncMaxLimit: 1000
   };
@@ -123,6 +124,23 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
         count: 1,
         images: [{ sourceId, messageId: 77, media: { kind: 'photo' } }],
         nextBeforeMessageId: null
+      }),
+      getTelegramImages: async ({ sourceId, messageIds }) => ({
+        status: 'ok',
+        sourceId,
+        requested: messageIds.length,
+        succeeded: 1,
+        failed: 0,
+        totalBytes: 5,
+        items: [{
+          messageId: messageIds[0],
+          status: 'ok',
+          cacheHit: true,
+          image: { sourceId, messageId: messageIds[0] },
+          mimeType: 'image/jpeg',
+          size: 5,
+          data: Buffer.from('image').toString('base64')
+        }]
       })
     },
     oauthTokenVerifier: verifier
@@ -227,6 +245,11 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       arguments: { sourceId: 'enabled-1' }
     });
     assert.equal(readerImages.structuredContent.images[0].messageId, 77);
+    const readerImage = await reader.client.callTool({
+      name: 'get_telegram_images',
+      arguments: { sourceId: 'enabled-1', messageIds: [77] }
+    });
+    assert.equal(readerImage.content.some((item) => item.type === 'image'), true);
     const disabledEscalation = await reader.client.callTool({
       name: 'list_sources',
       arguments: { includeDisabled: true }

@@ -1,5 +1,5 @@
 export class MemoryTelegramStore {
-  constructor({ sources = [], messages = [] } = {}) {
+  constructor({ sources = [], messages = [], mediaCache = [] } = {}) {
     this.sources = sources.map((source) => ({
       enabled: true,
       tags: [],
@@ -10,6 +10,11 @@ export class MemoryTelegramStore {
     this.messages = messages.map((message) => ({ ...message, date: new Date(message.date) }));
     this.savedDigests = [];
     this.sourceAudit = [];
+    this.mediaCache = mediaCache.map((entry) => ({
+      ...entry,
+      cachedAt: new Date(entry.cachedAt),
+      expiresAt: new Date(entry.expiresAt)
+    }));
   }
 
   async ensureIndexes() {}
@@ -152,10 +157,13 @@ export class MemoryTelegramStore {
     }
     const deletedDigests = this.savedDigests.length;
     this.savedDigests = [];
+    const cacheBefore = this.mediaCache.length;
+    this.mediaCache = this.mediaCache.filter((entry) => entry.sourceId !== sourceId);
     return {
       source,
       deletedMessages: before - this.messages.length,
-      deletedDigests
+      deletedDigests,
+      deletedCacheEntries: cacheBefore - this.mediaCache.length
     };
   }
 
@@ -375,6 +383,55 @@ export class MemoryTelegramStore {
       .map((messageId) => byId.get(messageId))
       .filter(Boolean)
       .map((message) => ({ ...message, media: { ...message.media }, raw: { ...(message.raw || {}) } }));
+  }
+
+  async getMediaCacheEntries({ sourceId, messageIds = [] } = {}) {
+    const idSet = new Set(messageIds);
+    const entries = this.mediaCache
+      .filter((entry) => entry.sourceId === sourceId)
+      .filter((entry) => !idSet.size || idSet.has(entry.messageId));
+    if (!idSet.size) {
+      return entries.map((entry) => ({ ...entry }));
+    }
+    const byId = new Map(entries.map((entry) => [entry.messageId, entry]));
+    return messageIds.map((messageId) => byId.get(messageId)).filter(Boolean).map((entry) => ({ ...entry }));
+  }
+
+  async upsertMediaCache(entry) {
+    const index = this.mediaCache.findIndex(
+      (item) => item.sourceId === entry.sourceId && item.messageId === entry.messageId
+    );
+    const normalized = {
+      ...entry,
+      cachedAt: new Date(entry.cachedAt),
+      expiresAt: new Date(entry.expiresAt)
+    };
+    if (index >= 0) {
+      this.mediaCache[index] = normalized;
+    } else {
+      this.mediaCache.push(normalized);
+    }
+    return { ...normalized };
+  }
+
+  async deleteMediaCacheEntry({ sourceId, messageId }) {
+    const before = this.mediaCache.length;
+    this.mediaCache = this.mediaCache.filter(
+      (entry) => entry.sourceId !== sourceId || entry.messageId !== messageId
+    );
+    return { deletedCount: before - this.mediaCache.length };
+  }
+
+  async listExpiredMediaCache({ now = new Date(), limit = 100 } = {}) {
+    return this.mediaCache
+      .filter((entry) => entry.expiresAt <= now)
+      .sort((left, right) => left.expiresAt - right.expiresAt)
+      .slice(0, limit)
+      .map((entry) => ({ ...entry }));
+  }
+
+  async listAllMediaCacheEntries() {
+    return this.mediaCache.map((entry) => ({ ...entry }));
   }
 
   async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {

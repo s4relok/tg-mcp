@@ -18,6 +18,7 @@ function config(overrides = {}) {
     sourceSchedulerBatchSize: 10,
     sourceMutationBatchLimit: 25,
     sourceSyncLockSeconds: 900,
+    mcpImageCacheMaxItemsPerSync: 100,
     ...overrides
   };
 }
@@ -103,6 +104,54 @@ test('coordinator refuses disabled sources and the ALLOWED_SOURCE_IDS ceiling', 
   assert.equal(clients, 0);
   assert.ok(result.skipped.some((item) => item.sourceId === 'disabled' && item.reason === 'disabled'));
   assert.ok(result.skipped.some((item) => item.sourceId === 'outside' && item.reason === 'outside_allowed_source_ids'));
+});
+
+test('coordinator caches images only for an explicit bounded manual request', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'channel-1', title: 'Game News', enabled: true }]
+  });
+  const calls = [];
+  const client = { disconnect: async () => {} };
+  const coordinator = createTelegramSyncCoordinator({
+    config: config({ mcpImageCacheMaxItemsPerSync: 25 }),
+    store,
+    createClient: async () => client,
+    syncMessages: async () => ({
+      sourceCount: 1,
+      messageCount: 3,
+      audioMessageCount: 0,
+      imageMessageCount: 2,
+      sources: [{ sourceId: 'channel-1', messageCount: 3, imageMessageCount: 2 }]
+    }),
+    imageService: {
+      cacheSourceImages: async (args) => {
+        calls.push(args);
+        return {
+          status: 'ok',
+          sourceId: args.sourceId,
+          requested: 2,
+          cached: 1,
+          alreadyCached: 1,
+          failed: 0
+        };
+      }
+    }
+  });
+
+  const normal = await coordinator.run({ sourceIds: ['channel-1'] });
+  const cached = await coordinator.run({
+    sourceIds: ['channel-1'],
+    cacheImages: true,
+    imageLimit: 7
+  });
+
+  assert.equal(normal.cacheImages, false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].client, client);
+  assert.equal(calls[0].limit, 7);
+  assert.equal(cached.imageCache.cached, 1);
+  assert.equal(cached.imageCache.alreadyCached, 1);
+  assert.equal(cached.imageLimit, 7);
 });
 
 test('coordinator records source errors and releases the lease', async () => {

@@ -140,6 +140,7 @@ export function createApp({
     store,
     createClient: createTelegramClient,
     syncMessages,
+    imageService: telegramImages,
     now,
     afterSync: async (result) => {
       if (result.audioMessageCount > 0) {

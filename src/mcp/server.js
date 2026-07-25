@@ -15,6 +15,43 @@ function toolResult(data) {
   };
 }
 
+function imageToolResult(data) {
+  const items = (data.items || []).map(({ data: _base64, ...item }) => item);
+  const structuredContent = {
+    ...data,
+    items
+  };
+  const content = [
+    {
+      type: 'text',
+      text: JSON.stringify(structuredContent, null, 2)
+    }
+  ];
+  for (const item of data.items || []) {
+    if (item.status !== 'ok' || !item.data) {
+      continue;
+    }
+    content.push({
+      type: 'text',
+      text: JSON.stringify({
+        sourceId: data.sourceId,
+        messageId: item.messageId,
+        cacheHit: item.cacheHit,
+        image: item.image
+      }, null, 2)
+    });
+    content.push({
+      type: 'image',
+      data: item.data,
+      mimeType: item.mimeType
+    });
+  }
+  return {
+    content,
+    structuredContent
+  };
+}
+
 function oauthToolMetadata(access, scopes) {
   if (!access.oauth) {
     return {};
@@ -325,6 +362,33 @@ export function createTelegramMcpServer({
         extra,
         scopes: [OAuthScopes.read],
         run: async () => toolResult(await imageService.listSourceImages(args))
+      })
+    );
+
+    server.registerTool(
+      'get_telegram_images',
+      {
+        title: 'Get Telegram images',
+        description: 'Return selected synchronized Telegram images as MCP image content. Cache hits are read locally; cache misses are downloaded and stored for up to 30 days.',
+        inputSchema: {
+          sourceId: z.string().min(1).describe('Exact enabled Telegram source id.'),
+          messageIds: z.array(z.number().int().positive())
+            .min(1)
+            .max(config.mcpImageGetMaxItems || 5)
+            .describe('Exact Telegram image message ids from list_source_images or message search results.')
+        },
+        annotations: {
+          readOnlyHint: true,
+          openWorldHint: true
+        },
+        ...oauthToolMetadata(access, [OAuthScopes.read])
+      },
+      async (args, extra) => runAuthorizedTool({
+        access,
+        config,
+        extra,
+        scopes: [OAuthScopes.read],
+        run: async () => imageToolResult(await imageService.getTelegramImages(args))
       })
     );
   }
@@ -694,7 +758,13 @@ export function createTelegramMcpServer({
           sourceIds: z.array(z.string().min(1)).min(1).max(config.sourceMutationBatchLimit || 25),
           limit: z.number().int().min(1).max(config.telegramSyncMaxLimit || 1000).optional(),
           backfillDays: z.number().int().min(1).max(3650).optional()
-            .describe('Optional historical import depth, clamped to each source historyDepthDays setting.')
+            .describe('Optional historical import depth, clamped to each source historyDepthDays setting.'),
+          cacheImages: z.boolean().optional()
+            .describe('Cache a bounded set of synchronized images for 30 days. Defaults to false.'),
+          imageLimit: z.number().int().min(1)
+            .max(config.mcpImageCacheMaxItemsPerSync || 100)
+            .optional()
+            .describe('Maximum images to cache when cacheImages=true.')
         },
         annotations: {
           readOnlyHint: false,

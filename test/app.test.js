@@ -726,6 +726,7 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
     assert.equal(tools.tools.some((tool) => tool.name === 'enable_source'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'transcribe_source_audio'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'list_source_images'), false);
+    assert.equal(tools.tools.some((tool) => tool.name === 'get_telegram_images'), false);
     const listTool = tools.tools.find((tool) => tool.name === 'list_sources');
     assert.equal(Object.hasOwn(listTool.inputSchema.properties, 'includeDisabled'), false);
     const sources = await client.callTool({ name: 'list_sources', arguments: {} });
@@ -756,6 +757,7 @@ test('authenticated owner MCP exposes and executes source management tools when 
       mcpManualTranscriptionMaxLimit: 10,
       mcpImageToolsEnabled: true,
       mcpImageListMaxLimit: 100,
+      mcpImageGetMaxItems: 5,
       sourceMutationBatchLimit: 25,
       telegramSyncMaxLimit: 1000
     },
@@ -781,6 +783,23 @@ test('authenticated owner MCP exposes and executes source management tools when 
         count: 1,
         images: [{ sourceId, messageId: 7, media: { kind: 'photo' } }],
         nextBeforeMessageId: null
+      }),
+      getTelegramImages: async ({ sourceId, messageIds }) => ({
+        status: 'ok',
+        sourceId,
+        requested: messageIds.length,
+        succeeded: 1,
+        failed: 0,
+        totalBytes: 10,
+        items: [{
+          messageId: messageIds[0],
+          status: 'ok',
+          cacheHit: true,
+          image: { sourceId, messageId: messageIds[0], text: 'caption' },
+          mimeType: 'image/jpeg',
+          size: 10,
+          data: Buffer.from('test-image').toString('base64')
+        }]
       })
     }
   });
@@ -809,7 +828,8 @@ test('authenticated owner MCP exposes and executes source management tools when 
       'update_source_settings',
       'sync_source',
       'transcribe_source_audio',
-      'list_source_images'
+      'list_source_images',
+      'get_telegram_images'
     ]) {
       assert.ok(names.includes(name), `${name} should be exposed to the owner`);
     }
@@ -852,6 +872,14 @@ test('authenticated owner MCP exposes and executes source management tools when 
       arguments: { sourceId: 'channel-1' }
     });
     assert.equal(images.structuredContent.images[0].messageId, 7);
+
+    const image = await client.callTool({
+      name: 'get_telegram_images',
+      arguments: { sourceId: 'channel-1', messageIds: [7] }
+    });
+    assert.equal(image.content.some((item) => item.type === 'image'), true);
+    assert.equal(image.structuredContent.items[0].messageId, 7);
+    assert.equal(Object.hasOwn(image.structuredContent.items[0], 'data'), false);
 
     await transport.close();
   } finally {
