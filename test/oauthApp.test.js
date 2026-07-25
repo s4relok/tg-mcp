@@ -92,6 +92,8 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     allowedHosts: ['127.0.0.1', 'localhost'],
     appAuthToken: '',
     mcpSourceManagementEnabled: true,
+    mcpManualTranscriptionEnabled: true,
+    mcpManualTranscriptionMaxLimit: 10,
     sourceMutationBatchLimit: 25,
     telegramSyncMaxLimit: 1000
   };
@@ -99,6 +101,19 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     config,
     store,
     digestService: createTelegramDigestService(store),
+    manualTranscriptionService: {
+      transcribeSourceAudio: async ({ sourceId, limit }) => ({
+        status: 'ok',
+        sourceId,
+        requestedLimit: limit || 1,
+        processedCount: 1,
+        completed: 1,
+        failed: 0,
+        retryScheduled: 0,
+        remainingPending: 0,
+        results: []
+      })
+    },
     oauthTokenVerifier: verifier
   });
   const server = await listen(app);
@@ -210,6 +225,15 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       arguments: { sourceIds: ['disabled-1'] }
     });
     assert.equal(mutationEscalation.isError, true);
+    const transcriptionEscalation = await reader.client.callTool({
+      name: 'transcribe_source_audio',
+      arguments: { sourceId: 'enabled-1', limit: 1 }
+    });
+    assert.equal(transcriptionEscalation.isError, true);
+    assert.match(
+      transcriptionEscalation._meta['mcp/www_authenticate'][0],
+      /telegram:sync:run/
+    );
 
     const owner = clientFor(`${baseUrl}${config.oauthMcpPath}`, 'owner-token');
     activeTransports.push(owner.transport);
@@ -228,6 +252,11 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     });
     assert.equal(enabled.structuredContent.status, 'updated');
     assert.equal(store.sourceAudit[0].actor, 'mcp:oauth:owner-1');
+    const transcribed = await owner.client.callTool({
+      name: 'transcribe_source_audio',
+      arguments: { sourceId: 'enabled-1', limit: 2 }
+    });
+    assert.equal(transcribed.structuredContent.completed, 1);
 
     tokenScopes.set('owner-token', [OAuthScopes.read]);
     const downgraded = await owner.client.callTool({

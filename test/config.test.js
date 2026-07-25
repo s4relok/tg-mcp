@@ -111,15 +111,30 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
   assert.equal(defaults.sourceDefaultIncludeMedia, true);
   assert.equal(defaults.sourceDefaultPriority, 50);
   assert.equal(defaults.mcpSourceManagementEnabled, false);
+  assert.equal(defaults.mcpManualTranscriptionEnabled, false);
+  assert.equal(defaults.mcpManualTranscriptionMaxLimit, 10);
+  assert.equal(defaults.mcpImageToolsEnabled, false);
+  assert.equal(defaults.imageCacheRetentionDays, 30);
 
   const configured = loadConfig({
     SOURCE_DEFAULT_SYNC_INTERVAL_SECONDS: '900',
     SOURCE_DEFAULT_INCLUDE_MEDIA: 'false',
-    MCP_SOURCE_MANAGEMENT_ENABLED: 'true'
+    MCP_SOURCE_MANAGEMENT_ENABLED: 'true',
+    MCP_MANUAL_TRANSCRIPTION_ENABLED: 'true',
+    MCP_IMAGE_TOOLS_ENABLED: 'true',
+    IMAGE_CACHE_RETENTION_DAYS: '14'
   });
   assert.equal(configured.sourceDefaultSyncIntervalSeconds, 900);
   assert.equal(configured.sourceDefaultIncludeMedia, false);
   assert.equal(configured.mcpSourceManagementEnabled, true);
+  assert.equal(configured.mcpManualTranscriptionEnabled, true);
+  assert.equal(configured.mcpImageToolsEnabled, true);
+  assert.equal(configured.imageCacheRetentionDays, 14);
+
+  assert.throws(
+    () => loadConfig({ IMAGE_CACHE_RETENTION_DAYS: '31' }),
+    /IMAGE_CACHE_RETENTION_DAYS must be between 1 and 30/
+  );
 });
 
 test('loadConfig exposes fail-closed OAuth defaults and derived resource metadata URL', () => {

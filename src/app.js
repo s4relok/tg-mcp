@@ -14,6 +14,7 @@ import {
   oauthSessionPrincipal
 } from './http/oauth.js';
 import { createOpenApiDocument } from './http/openapi.js';
+import { createManualTranscriptionService } from './audio/manualTranscriptionService.js';
 import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramMcpServer } from './mcp/server.js';
 import { createReadinessReport } from './services/doctor.js';
@@ -89,6 +90,7 @@ export function createApp({
   store,
   digestService,
   sourceManagementService,
+  manualTranscriptionService,
   syncCoordinator,
   oauthTokenVerifier,
   telegramAdmin = {},
@@ -120,6 +122,11 @@ export function createApp({
       now: audioTranscriptionAdmin.now || now
     });
     return worker.runOnce({ ...args, force: args.force ?? true });
+  });
+  const transcribeAudio = manualTranscriptionService || createManualTranscriptionService({
+    config,
+    store,
+    runAudioTranscriptions
   });
   const manageSources = sourceManagementService || createSourceManagementService({ store, config, now });
   const sourceSync = syncCoordinator || createTelegramSyncCoordinator({
@@ -422,6 +429,7 @@ export function createApp({
             digestService,
             config,
             sourceManagementService: manageSources,
+            manualTranscriptionService: transcribeAudio,
             syncCoordinator: sourceSync,
             access
           });
@@ -489,6 +497,7 @@ export function createApp({
     allowDisabledSources: hasOwnerToken,
     manageSources: hasOwnerToken && config.mcpSourceManagementEnabled,
     runSourceSync: hasOwnerToken && config.mcpSourceManagementEnabled,
+    runManualTranscription: hasOwnerToken && config.mcpManualTranscriptionEnabled,
     actor: 'mcp:owner-token'
   });
   if (config.chatGptMcpPath && config.chatGptMcpPath !== config.mcpPath) {
@@ -496,6 +505,7 @@ export function createApp({
       allowDisabledSources: false,
       manageSources: false,
       runSourceSync: false,
+      runManualTranscription: false,
       actor: 'mcp:read-only'
     });
   }
@@ -505,6 +515,7 @@ export function createApp({
       allowDisabledSources: config.mcpSourceManagementEnabled,
       manageSources: config.mcpSourceManagementEnabled,
       runSourceSync: config.mcpSourceManagementEnabled,
+      runManualTranscription: config.mcpManualTranscriptionEnabled,
       actor: 'mcp:oauth'
     });
   }

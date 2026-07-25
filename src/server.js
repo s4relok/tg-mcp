@@ -29,7 +29,10 @@ async function main() {
     store,
     digestService,
     sourceManagementService,
-    syncCoordinator
+    syncCoordinator,
+    audioTranscriptionAdmin: {
+      runOnce: audioTranscriptionWorker.runOnce
+    }
   });
   const syncWorker = startTelegramSyncWorker({
     config,

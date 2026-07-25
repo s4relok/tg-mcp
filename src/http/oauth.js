@@ -41,9 +41,11 @@ export function getSupportedOAuthScopes(config) {
   if (config.mcpSourceManagementEnabled) {
     scopes.push(
       OAuthScopes.sourcesRead,
-      OAuthScopes.sourcesManage,
-      OAuthScopes.syncRun
+      OAuthScopes.sourcesManage
     );
+  }
+  if (config.mcpSourceManagementEnabled || config.mcpManualTranscriptionEnabled) {
+    scopes.push(OAuthScopes.syncRun);
   }
   return scopes;
 }

@@ -194,6 +194,7 @@ export function createTelegramMcpServer({
   digestService,
   config,
   sourceManagementService,
+  manualTranscriptionService,
   syncCoordinator,
   access = {}
 }) {
@@ -294,6 +295,39 @@ export function createTelegramMcpServer({
       run: async () => toolResult(await digestService.getAudioTranscriptionStatus(args))
     })
   );
+
+  if (access.runManualTranscription && manualTranscriptionService) {
+    server.registerTool(
+      'transcribe_source_audio',
+      {
+        title: 'Transcribe Telegram audio for one source',
+        description: 'Manually transcribe a bounded number of pending voice/audio messages for one exact enabled Telegram source. This does not change the background transcription allowlist.',
+        inputSchema: {
+          sourceId: z.string().min(1).describe('Exact enabled Telegram source id.'),
+          limit: z.number().int().min(1)
+            .max(config.mcpManualTranscriptionMaxLimit || 10)
+            .optional()
+            .describe('Maximum pending audio messages to process. Defaults to 1.')
+        },
+        annotations: {
+          readOnlyHint: false,
+          idempotentHint: false,
+          destructiveHint: false,
+          openWorldHint: true
+        },
+        ...oauthToolMetadata(access, [OAuthScopes.read, OAuthScopes.syncRun])
+      },
+      async (args, extra) => runAuthorizedTool({
+        access,
+        config,
+        extra,
+        scopes: [OAuthScopes.read, OAuthScopes.syncRun],
+        run: async () => toolResult(
+          await manualTranscriptionService.transcribeSourceAudio(args)
+        )
+      })
+    );
+  }
 
   server.registerTool(
     'get_daily_digest',

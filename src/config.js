@@ -18,6 +18,14 @@ function readNumber(env, name, fallback) {
   return value;
 }
 
+function readBoundedNumber(env, name, fallback, { min, max }) {
+  const value = readNumber(env, name, fallback);
+  if (value < min || value > max) {
+    throw new Error(`${name} must be between ${min} and ${max}`);
+  }
+  return value;
+}
+
 function readBoolean(env, name, fallback) {
   const raw = env[name];
   if (raw === undefined || raw === '') {
@@ -133,6 +141,47 @@ export function loadConfig(env = process.env) {
     sourceSyncLockSeconds: readNumber(env, 'SOURCE_SYNC_LOCK_SECONDS', 15 * 60),
     sourceMutationBatchLimit: readNumber(env, 'SOURCE_MUTATION_BATCH_LIMIT', 25),
     mcpSourceManagementEnabled: readBoolean(env, 'MCP_SOURCE_MANAGEMENT_ENABLED', false),
+    mcpManualTranscriptionEnabled: readBoolean(env, 'MCP_MANUAL_TRANSCRIPTION_ENABLED', false),
+    mcpManualTranscriptionMaxLimit: readBoundedNumber(
+      env,
+      'MCP_MANUAL_TRANSCRIPTION_MAX_LIMIT',
+      10,
+      { min: 1, max: 100 }
+    ),
+    mcpImageToolsEnabled: readBoolean(env, 'MCP_IMAGE_TOOLS_ENABLED', false),
+    mcpImageListMaxLimit: readBoundedNumber(env, 'MCP_IMAGE_LIST_MAX_LIMIT', 100, {
+      min: 1,
+      max: 500
+    }),
+    mcpImageGetMaxItems: readBoundedNumber(env, 'MCP_IMAGE_GET_MAX_ITEMS', 5, {
+      min: 1,
+      max: 20
+    }),
+    mcpImageMaxFileBytes: readBoundedNumber(env, 'MCP_IMAGE_MAX_FILE_BYTES', 10 * 1024 * 1024, {
+      min: 1024,
+      max: 25 * 1024 * 1024
+    }),
+    mcpImageMaxTotalBytes: readBoundedNumber(env, 'MCP_IMAGE_MAX_TOTAL_BYTES', 25 * 1024 * 1024, {
+      min: 1024,
+      max: 100 * 1024 * 1024
+    }),
+    mcpImageCacheMaxItemsPerSync: readBoundedNumber(
+      env,
+      'MCP_IMAGE_CACHE_MAX_ITEMS_PER_SYNC',
+      100,
+      { min: 1, max: 500 }
+    ),
+    imageCacheDir: env.IMAGE_CACHE_DIR || './tmp/image-cache',
+    imageCacheRetentionDays: readBoundedNumber(env, 'IMAGE_CACHE_RETENTION_DAYS', 30, {
+      min: 1,
+      max: 30
+    }),
+    imageCacheCleanupIntervalSeconds: readBoundedNumber(
+      env,
+      'IMAGE_CACHE_CLEANUP_INTERVAL_SECONDS',
+      3600,
+      { min: 60, max: 86400 }
+    ),
 
     openAiApiKey: env.OPENAI_API_KEY || '',
     openAiTranscriptionEnabled: readBoolean(env, 'OPENAI_TRANSCRIPTION_ENABLED', false),

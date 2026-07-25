@@ -685,7 +685,8 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
     config: {
       ...testConfig(),
       appAuthToken: 'secret-token',
-      chatGptMcpPath: '/tg-mcp/chatgpt-test-mcp'
+      chatGptMcpPath: '/tg-mcp/chatgpt-test-mcp',
+      mcpManualTranscriptionEnabled: true
     },
     store,
     digestService: createTelegramDigestService(store)
@@ -722,6 +723,7 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
     const tools = await client.listTools();
     assert.ok(tools.tools.some((tool) => tool.name === 'get_daily_digest'));
     assert.equal(tools.tools.some((tool) => tool.name === 'enable_source'), false);
+    assert.equal(tools.tools.some((tool) => tool.name === 'transcribe_source_audio'), false);
     const listTool = tools.tools.find((tool) => tool.name === 'list_sources');
     assert.equal(Object.hasOwn(listTool.inputSchema.properties, 'includeDisabled'), false);
     const sources = await client.callTool({ name: 'list_sources', arguments: {} });
@@ -748,11 +750,26 @@ test('authenticated owner MCP exposes and executes source management tools when 
       ...testConfig(),
       appAuthToken: 'secret-token',
       mcpSourceManagementEnabled: true,
+      mcpManualTranscriptionEnabled: true,
+      mcpManualTranscriptionMaxLimit: 10,
       sourceMutationBatchLimit: 25,
       telegramSyncMaxLimit: 1000
     },
     store,
-    digestService: createTelegramDigestService(store)
+    digestService: createTelegramDigestService(store),
+    manualTranscriptionService: {
+      transcribeSourceAudio: async (args) => ({
+        status: 'ok',
+        sourceId: args.sourceId,
+        requestedLimit: args.limit || 1,
+        processedCount: 1,
+        completed: 1,
+        failed: 0,
+        retryScheduled: 0,
+        remainingPending: 0,
+        results: [{ messageId: 42, status: 'done' }]
+      })
+    }
   });
   const server = await listen(app);
 
@@ -777,7 +794,8 @@ test('authenticated owner MCP exposes and executes source management tools when 
       'set_source_tags',
       'get_source_settings',
       'update_source_settings',
-      'sync_source'
+      'sync_source',
+      'transcribe_source_audio'
     ]) {
       assert.ok(names.includes(name), `${name} should be exposed to the owner`);
     }
@@ -807,6 +825,13 @@ test('authenticated owner MCP exposes and executes source management tools when 
     assert.equal(updated.structuredContent.status, 'updated');
     assert.equal(updated.structuredContent.source.effectiveSettings.syncIntervalSeconds, 900);
     assert.equal(store.sourceAudit.length, 2);
+
+    const transcribed = await client.callTool({
+      name: 'transcribe_source_audio',
+      arguments: { sourceId: 'channel-1', limit: 2 }
+    });
+    assert.equal(transcribed.structuredContent.completed, 1);
+    assert.equal(transcribed.structuredContent.sourceId, 'channel-1');
 
     await transport.close();
   } finally {
