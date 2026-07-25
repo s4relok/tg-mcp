@@ -100,6 +100,9 @@ test('audio transcription worker downloads, transcribes, stores transcript, and 
   assert.equal(messages.length, 1);
   assert.equal(messages[0].transcription.status, 'done');
   await assert.rejects(() => fs.stat(downloadedPath), /ENOENT/);
+
+  const repeat = await worker.runOnce({ force: true });
+  assert.equal(repeat.processedCount, 0);
 });
 
 test('audio transcription worker schedules retry before final failure', async () => {
@@ -233,4 +236,62 @@ test('audio transcription worker only claims configured transcription sources', 
   const otherMessages = await store.findMessages({ sourceIds: ['other'] });
   assert.equal(savedMessages.length, 1);
   assert.equal(otherMessages[0].transcription.status, 'pending');
+});
+
+test('audio transcription worker rejects an overlapping manual run', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-audio-worker-overlap-'));
+  const downloadedPath = path.join(tmp, 'downloaded.ogg');
+  const store = storeWithPendingAudio();
+  let resolveTranscription;
+  let markTranscriptionStarted;
+  const transcriptionStarted = new Promise((resolve) => {
+    markTranscriptionStarted = resolve;
+  });
+  const releaseTranscription = new Promise((resolve) => {
+    resolveTranscription = resolve;
+  });
+
+  const worker = createAudioTranscriptionWorker({
+    config: baseConfig({ audioTranscriptionWorkDir: tmp }),
+    store,
+    createClient: async () => ({
+      disconnect: async () => {}
+    }),
+    createTranscriber: () => ({
+      transcribe: async () => {
+        markTranscriptionStarted();
+        await releaseTranscription;
+        return {
+          model: 'gpt-4o-mini-transcribe',
+          responseFormat: 'json',
+          text: 'Finished after overlap test.',
+          segments: []
+        };
+      }
+    }),
+    getMessage: async () => ({}),
+    downloadAudio: async () => {
+      await fs.writeFile(downloadedPath, 'audio-bytes');
+      return { filePath: downloadedPath, size: 11 };
+    }
+  });
+
+  const firstRun = worker.runOnce({
+    force: true,
+    sourceIds: ['saved'],
+    limit: 1
+  });
+  await transcriptionStarted;
+
+  const overlapping = await worker.runOnce({
+    force: true,
+    sourceIds: ['saved'],
+    limit: 1
+  });
+  assert.equal(overlapping.skipped, true);
+  assert.equal(overlapping.reason, 'already_running');
+
+  resolveTranscription();
+  const completed = await firstRun;
+  assert.equal(completed.completed, 1);
 });

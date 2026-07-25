@@ -126,3 +126,29 @@ test('manual transcription returns a sync hint when no pending audio is availabl
   assert.equal(result.processedCount, 0);
   assert.match(result.hint, /sync_source/);
 });
+
+test('manual transcription rejects limits outside the configured server ceiling', async () => {
+  const store = new MemoryTelegramStore({
+    sources: [{ sourceId: 'work', title: 'Work Chat', enabled: true }]
+  });
+  let runs = 0;
+  const service = createManualTranscriptionService({
+    config: {
+      allowedSourceIds: [],
+      mcpManualTranscriptionMaxLimit: 3
+    },
+    store,
+    runAudioTranscriptions: async () => {
+      runs += 1;
+      return {};
+    }
+  });
+
+  for (const limit of [0, 4, 1.5]) {
+    await assert.rejects(
+      service.transcribeSourceAudio({ sourceId: 'work', limit }),
+      /limit must be an integer between 1 and 3/
+    );
+  }
+  assert.equal(runs, 0);
+});
