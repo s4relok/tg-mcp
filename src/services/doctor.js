@@ -1,3 +1,4 @@
+import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 
 import { createAuthorizedTelegramClient } from '../telegram/telegramSync.js';
@@ -77,6 +78,7 @@ function createNextSteps(checks, { envFile } = {}) {
   const telegramSources = findCheck(checks, 'telegram_sources');
   const telegramBot = findCheck(checks, 'telegram_bot');
   const openAiTranscription = findCheck(checks, 'openai_transcription');
+  const imageCache = findCheck(checks, 'image_cache');
 
   if (mongodb?.status === 'error') {
     addUniqueStep(steps, {
@@ -159,6 +161,14 @@ function createNextSteps(checks, { envFile } = {}) {
       command: missingSourceFilter
         ? 'Set AUDIO_TRANSCRIPTION_SOURCE_IDS=<source_id>[,<source_id>] or AUDIO_TRANSCRIPTION_SOURCE_TAGS=<tag>[,<tag>], then restart the service.'
         : 'Set OPENAI_API_KEY or set OPENAI_TRANSCRIPTION_ENABLED=false, then restart the service.'
+    });
+  }
+
+  if (imageCache?.status && imageCache.status !== 'ok') {
+    addUniqueStep(steps, {
+      id: 'prepare_image_cache',
+      reason: imageCache.message,
+      command: `Create ${imageCache.details?.directory || 'IMAGE_CACHE_DIR'}, set ownership to the tg-mcp service user, and chmod 0700.`
     });
   }
 
@@ -271,6 +281,37 @@ function openAiTranscriptionStatus(config) {
   });
 }
 
+async function imageCacheStatus(config) {
+  if (!config.mcpImageToolsEnabled) {
+    return ok('image_cache', 'MCP image tools are disabled.');
+  }
+  const directory = config.imageCacheDir;
+  try {
+    const stat = await fs.stat(directory);
+    if (!stat.isDirectory()) {
+      return error('image_cache', 'IMAGE_CACHE_DIR exists but is not a directory.', {
+        directory
+      });
+    }
+    await fs.access(directory, fsConstants.R_OK | fsConstants.W_OK);
+    return ok('image_cache', '30-day image cache directory is readable and writable.', {
+      directory,
+      retentionDays: config.imageCacheRetentionDays
+    });
+  } catch (caught) {
+    if (caught.code === 'ENOENT') {
+      return warn('image_cache', 'MCP image tools are enabled but IMAGE_CACHE_DIR does not exist.', {
+        directory,
+        retentionDays: config.imageCacheRetentionDays
+      });
+    }
+    return error('image_cache', `IMAGE_CACHE_DIR is not usable: ${caught.message}`, {
+      directory,
+      retentionDays: config.imageCacheRetentionDays
+    });
+  }
+}
+
 export async function createReadinessReport({
   config,
   store,
@@ -318,6 +359,7 @@ export async function createReadinessReport({
 
   checks.push(telegramBotStatus(config));
   checks.push(openAiTranscriptionStatus(config));
+  checks.push(await imageCacheStatus(config));
 
   checks.push(await sessionFileStatus(config.telegramSessionFile));
 

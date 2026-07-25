@@ -27,6 +27,10 @@ Telegram digest MCP server that logs into a Telegram user account and works only
   - `get_message_context`
   - `get_action_items`
   - `get_source_summary`
+- Optional authenticated owner media tools:
+  - `transcribe_source_audio`
+  - `list_source_images`
+  - `get_telegram_images`
 - Optional authenticated owner MCP tools:
   - `enable_source`
   - `disable_source`
@@ -104,10 +108,12 @@ The IdP must echo the OAuth `resource` parameter and issue an expiring JWT acces
 
 Available scopes:
 
-- `telegram:read`: enabled-source lists, digests, search, summaries, and status.
+- `telegram:read`: enabled-source lists, digests, search, summaries, status, and
+  owner image List/Get when `MCP_IMAGE_TOOLS_ENABLED=true`.
 - `telegram:sources:read`: disabled-source catalog and source settings.
 - `telegram:sources:manage`: enable/disable, tags, and settings mutations.
-- `telegram:sync:run`: exact bounded manual sync.
+- `telegram:sync:run`: exact bounded manual sync and manual audio
+  transcription.
 
 The OAuth transport always requires `telegram:read`. Each privileged tool checks its additional scopes against the current request token, including after a session has been initialized. Missing scopes return an MCP `mcp/www_authenticate` challenge so ChatGPT can request authorization again.
 
@@ -118,7 +124,13 @@ https://celticspear.com/.well-known/oauth-protected-resource
 https://celticspear.com/.well-known/oauth-protected-resource/tg-mcp/oauth-mcp
 ```
 
-`MCP_SOURCE_MANAGEMENT_ENABLED=true` is still required before privileged source tools are registered. Keep `APP_AUTH_TOKEN` for admin, REST, CLI setup, and the legacy `/mcp` endpoint; OAuth protects only `OAUTH_MCP_PATH`. See the implementation and IdP rollout checklist in [docs/oauth-scopes-plan.md](docs/oauth-scopes-plan.md).
+`MCP_SOURCE_MANAGEMENT_ENABLED=true` is required before privileged source
+tools are registered. Manual transcription and image delivery are controlled
+independently by `MCP_MANUAL_TRANSCRIPTION_ENABLED` and
+`MCP_IMAGE_TOOLS_ENABLED`. Keep `APP_AUTH_TOKEN` for admin, REST, CLI setup,
+and the legacy `/mcp` endpoint; OAuth protects only `OAUTH_MCP_PATH`. See the
+implementation and IdP rollout checklist in
+[docs/oauth-scopes-plan.md](docs/oauth-scopes-plan.md).
 
 ## Telegram setup
 
@@ -261,7 +273,9 @@ Per-source settings:
 
 - `syncIntervalSeconds`: `60..604800`, or `null`/CLI `inherit` for the server default.
 - `historyDepthDays`: `1..3650`, or inherit. This limits import depth and is not retention.
-- `includeMedia`: keeps supported media metadata and permits supported audio transcription jobs; text captions remain searchable when media metadata is disabled.
+- `includeMedia`: keeps supported audio and image metadata and permits supported
+  audio transcription jobs; text captions remain searchable when media
+  metadata is disabled.
 - `includeReplies`: imports or skips reply messages.
 - `includeForwardedPosts`: imports or skips forwarded messages.
 - `priority`: `0..100`; higher values run first when multiple sources are due.
@@ -270,6 +284,8 @@ To expose owner write tools on the bearer-protected MCP endpoint, explicitly ena
 
 ```text
 MCP_SOURCE_MANAGEMENT_ENABLED=true
+MCP_MANUAL_TRANSCRIPTION_ENABLED=true
+MCP_IMAGE_TOOLS_ENABLED=true
 ```
 
 This flag has no effect on the no-auth `CHATGPT_MCP_PATH`; that endpoint remains read-only. On the OAuth endpoint, the same tools additionally require `telegram:sources:read` plus `telegram:sources:manage` (or `telegram:sync:run` for manual sync).
@@ -332,6 +348,88 @@ curl -X POST http://127.0.0.1:3010/admin/transcriptions/retry-failed \
 
 The read-only REST endpoint `/tg-mcp/api/transcriptions/status` and MCP tool `get_audio_transcription_status` expose counts for selected sources. Search and digest tools automatically use completed transcripts.
 
+### Manual MCP transcription
+
+When `MCP_MANUAL_TRANSCRIPTION_ENABLED=true`, authenticated owner/OAuth MCP
+clients can call:
+
+```text
+transcribe_source_audio(sourceId="<exact-enabled-source-id>", limit=5)
+```
+
+The command processes only pending voice/audio messages from that exact
+source. It does not call Telegram sync, change source settings, or add the
+source to `AUDIO_TRANSCRIPTION_SOURCE_IDS` /
+`AUDIO_TRANSCRIPTION_SOURCE_TAGS`. Call `sync_source` first when fresh or
+historical audio is required.
+
+OAuth requires `telegram:read telegram:sync:run`. The command is never
+registered on the no-auth `CHATGPT_MCP_PATH`.
+
+## Telegram images
+
+Telegram photos plus JPEG, PNG, and WebP documents are stored as message
+metadata when the source has `includeMedia=true`. The server does not run OCR,
+vision models, embeddings, or automatic image tagging.
+
+Enable owner image tools and the fixed-retention file cache:
+
+```text
+MCP_IMAGE_TOOLS_ENABLED=true
+MCP_IMAGE_LIST_MAX_LIMIT=100
+MCP_IMAGE_GET_MAX_ITEMS=5
+MCP_IMAGE_MAX_FILE_BYTES=10485760
+MCP_IMAGE_MAX_TOTAL_BYTES=26214400
+MCP_IMAGE_CACHE_MAX_ITEMS_PER_SYNC=100
+IMAGE_CACHE_DIR=/srv/tg-mcp/shared/image-cache
+IMAGE_CACHE_RETENTION_DAYS=30
+IMAGE_CACHE_CLEANUP_INTERVAL_SECONDS=3600
+```
+
+`IMAGE_CACHE_RETENTION_DAYS` is clamped to `1..30`. A cache entry expires at a
+fixed time calculated when the file is written; List/Get calls do not extend
+it. The startup/periodic janitor removes expired files and Mongo cache metadata.
+Image bytes live only in `IMAGE_CACHE_DIR`, outside the web root. MongoDB stores
+the Telegram reference, relative path, MIME type, size, SHA-256, `cachedAt`,
+and `expiresAt`.
+
+Manual workflow:
+
+```text
+sync_source(
+  sourceIds=["<exact-enabled-source-id>"],
+  backfillDays=30,
+  cacheImages=true,
+  imageLimit=100
+)
+
+list_source_images(
+  sourceId="<exact-enabled-source-id>",
+  limit=20
+)
+
+get_telegram_images(
+  sourceId="<exact-enabled-source-id>",
+  messageIds=[123, 124]
+)
+```
+
+`sync_source` does not download image bytes unless `cacheImages=true`.
+`get_telegram_images` reads unexpired local cache entries first and downloads
+only cache misses from Telegram. It returns a text context block followed by
+real MCP image content for each successful item. The model using the MCP app
+can then inspect the pixels itself.
+
+Images without captions cannot be found semantically by this server. Use
+`list_source_images` with a bounded date range and pass selected message ids to
+`get_telegram_images`. Albums retain Telegram `groupedId`.
+
+If an image is removed from Telegram after it was cached, the local copy
+remains available only until its fixed expiry. There is no permanent archive.
+Both image tools require `telegram:read`, exact enabled sources, and the
+`ALLOWED_SOURCE_IDS` ceiling when configured. They are never registered on the
+no-auth `CHATGPT_MCP_PATH`.
+
 ## Digest cache
 
 Daily, period, and source summaries are cached in `tg_digests`. The cache key includes the period, timezone, source filters, timeline options, and selected source sync state, so a later Telegram sync naturally invalidates stale summaries.
@@ -373,6 +471,7 @@ Expected layout:
   releases/
   shared/
     .env
+    image-cache/
     logs/
     sessions/
     node/

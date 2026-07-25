@@ -181,7 +181,7 @@ export function createTelegramSyncCoordinator({
                 requested: 0,
                 cached: 0,
                 alreadyCached: 0,
-                failed: 0,
+                failed: 1,
                 error: 'Image cache service is not configured'
               });
             } else {
@@ -198,7 +198,7 @@ export function createTelegramSyncCoordinator({
                   requested: 0,
                   cached: 0,
                   alreadyCached: 0,
-                  failed: 0,
+                  failed: 1,
                   error: caught instanceof Error ? caught.message : String(caught)
                 });
               }

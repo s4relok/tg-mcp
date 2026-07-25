@@ -210,3 +210,38 @@ test('createReadinessReport validates optional OAuth configuration and subject r
   assert.ok(unrestricted.checks.some((check) => check.name === 'oauth' && check.status === 'warning'));
   assert.ok(unrestricted.nextSteps.some((step) => step.id === 'restrict_oauth_subjects'));
 });
+
+test('createReadinessReport validates the enabled 30-day image cache directory', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-doctor-images-'));
+  const missingDirectory = path.join(tmp, 'missing');
+  const missing = await createReadinessReport({
+    config: baseConfig({
+      mcpImageToolsEnabled: true,
+      imageCacheDir: missingDirectory,
+      imageCacheRetentionDays: 30
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+  assert.ok(missing.checks.some(
+    (check) => check.name === 'image_cache' && check.status === 'warning'
+  ));
+  assert.ok(missing.nextSteps.some((step) => step.id === 'prepare_image_cache'));
+
+  const directory = path.join(tmp, 'cache');
+  await fs.mkdir(directory);
+  const ready = await createReadinessReport({
+    config: baseConfig({
+      mcpImageToolsEnabled: true,
+      imageCacheDir: directory,
+      imageCacheRetentionDays: 30
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+  const check = ready.checks.find((item) => item.name === 'image_cache');
+  assert.equal(check.status, 'ok');
+  assert.equal(check.details.retentionDays, 30);
+});

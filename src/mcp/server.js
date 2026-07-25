@@ -219,6 +219,8 @@ function registerTelegramPrompts(server) {
         'First call get_sync_status with the same source filter. If data is missing, never synced, or stale, mention that limitation.',
         'If the query may refer to voice notes, audio recordings, or spoken conversations, also call get_audio_transcription_status and mention pending or failed transcripts.',
         'Then call search_telegram_messages. When a hit looks important or ambiguous, call get_message_context for surrounding messages.',
+        'When the user asks to see or analyze synchronized images, use mediaRef results or list_source_images, then call get_telegram_images only for the exact bounded message ids needed.',
+        'Images without captions cannot be found semantically by the server; list a bounded date range and let the client model inspect the returned images.',
         'Group results by practical topic and include direct Telegram links when available.',
         `Query: ${query}`,
         `Timezone: ${timezone || 'Europe/Chisinau'}${formatOptionalLine('From', from)}${formatOptionalLine('To', to)}${formatOptionalLine('Source filter', sourceQuery)}`

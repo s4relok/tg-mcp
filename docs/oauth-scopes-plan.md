@@ -12,10 +12,10 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 
 | Scope | Grants |
 | --- | --- |
-| `telegram:read` | Enabled-source lists, sync status, digests, summaries, search, message context, and action items |
+| `telegram:read` | Enabled-source lists, sync status, digests, summaries, search, message context, action items, and owner image List/Get |
 | `telegram:sources:read` | Disabled-source visibility and source settings |
 | `telegram:sources:manage` | Enable/disable sources, edit tags, and update source settings |
-| `telegram:sync:run` | Start an exact, bounded manual source sync |
+| `telegram:sync:run` | Start an exact, bounded manual source sync or manual audio transcription |
 
 `telegram:read` is required for the OAuth MCP transport. Privileged tool calls check their additional scopes at execution time, so a refreshed token with fewer permissions cannot continue using permissions from an older session.
 
@@ -28,6 +28,8 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 - [x] Advertise per-tool OAuth schemes through MCP tool metadata and return `mcp/www_authenticate` challenges for incremental scope requests.
 - [x] Bind stateful MCP sessions to route, OAuth subject, and client id; re-check the current token on every request/tool call.
 - [x] Keep source-management tools behind both `MCP_SOURCE_MANAGEMENT_ENABLED` and the required scopes.
+- [x] Keep manual transcription and image delivery behind independent
+  fail-closed feature flags without adding broader OAuth scopes.
 - [x] Complete unit/integration tests, documentation, and final security review.
 
 ## Authorization-server requirements
