@@ -30,8 +30,45 @@ function extensionFromMedia(media = {}) {
   return MIME_EXTENSIONS.get(media.mimeType || '') || '.audio';
 }
 
+const sourceEntityCache = new WeakMap();
+
+function telegramEntityId(entity) {
+  const id = entity?.id;
+  if (id === undefined || id === null) {
+    return '';
+  }
+  return typeof id.toString === 'function' ? id.toString() : String(id);
+}
+
+export async function resolveTelegramSourceEntity({ client, sourceId }) {
+  const normalizedSourceId = String(sourceId);
+  let cachedBySource = sourceEntityCache.get(client);
+  if (!cachedBySource) {
+    cachedBySource = new Map();
+    sourceEntityCache.set(client, cachedBySource);
+  }
+
+  if (cachedBySource.has(normalizedSourceId)) {
+    return cachedBySource.get(normalizedSourceId);
+  }
+
+  const dialogs = await client.getDialogs({});
+  const dialog = dialogs.find((candidate) => {
+    const entity = candidate?.entity || candidate;
+    return telegramEntityId(entity) === normalizedSourceId;
+  });
+  if (!dialog) {
+    throw new Error(`Telegram source was not found in authorized dialogs: ${normalizedSourceId}`);
+  }
+
+  const entity = dialog.entity || dialog;
+  cachedBySource.set(normalizedSourceId, entity);
+  return entity;
+}
+
 export async function getTelegramMessageById({ client, sourceId, messageId }) {
-  const messages = await client.getMessages(sourceId, { ids: messageId });
+  const entity = await resolveTelegramSourceEntity({ client, sourceId });
+  const messages = await client.getMessages(entity, { ids: messageId });
   if (Array.isArray(messages)) {
     return messages[0] || null;
   }
