@@ -62,9 +62,21 @@ async function main() {
     }
   });
 
+  let shuttingDown = false;
   async function shutdown(signal) {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     console.log(`Received ${signal}; shutting down.`);
+    server.closeIdleConnections?.();
+    const forceCloseTimer = setTimeout(() => {
+      console.warn('Forcing remaining MCP/HTTP connections closed during shutdown.');
+      server.closeAllConnections?.();
+    }, 1000);
+    forceCloseTimer.unref();
     server.close(async () => {
+      clearTimeout(forceCloseTimer);
       await syncWorker.stop();
       await audioTranscriptionWorker.stop();
       await imageCacheJanitor.stop();
