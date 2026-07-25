@@ -150,6 +150,88 @@ test('normalizeTelegramMessage maps Telegram voice metadata into transcription q
   });
 });
 
+test('normalizeTelegramMessage maps Telegram photos without creating transcription jobs', () => {
+  const source = normalizeTelegramSource(dialogs[0], { allowedSourceIds: ['1001'] });
+  const message = normalizeTelegramMessage(
+    {
+      id: 44,
+      date: 1783620000,
+      message: 'UI screenshot',
+      groupedId: { toString: () => 'album-1' },
+      photo: {
+        id: { toString: () => 'photo-555' },
+        dcId: 4,
+        sizes: [
+          { className: 'PhotoSize', w: 320, h: 180, size: 12000 },
+          { className: 'PhotoSize', w: 1920, h: 1080, size: 450000 }
+        ]
+      }
+    },
+    source
+  );
+
+  assert.deepEqual(message.media, {
+    kind: 'photo',
+    mimeType: 'image/jpeg',
+    size: 450000,
+    width: 1920,
+    height: 1080,
+    fileName: null,
+    photoId: 'photo-555',
+    dcId: 4
+  });
+  assert.equal(Object.hasOwn(message, 'transcription'), false);
+  assert.equal(message.raw.groupedId, 'album-1');
+});
+
+test('normalizeTelegramMessage maps supported image documents and ignores other documents', () => {
+  const source = normalizeTelegramSource(dialogs[0], { allowedSourceIds: ['1001'] });
+  const image = normalizeTelegramMessage(
+    {
+      id: 45,
+      date: 1783620000,
+      message: '',
+      document: {
+        id: { toString: () => 'document-555' },
+        mimeType: 'image/png',
+        size: 123456,
+        dcId: 2,
+        attributes: [
+          { className: 'DocumentAttributeImageSize', w: 800, h: 600 },
+          { className: 'DocumentAttributeFilename', fileName: 'screen.png' }
+        ]
+      }
+    },
+    source
+  );
+  const pdf = normalizeTelegramMessage(
+    {
+      id: 46,
+      date: 1783620000,
+      message: 'Document',
+      document: {
+        id: { toString: () => 'document-556' },
+        mimeType: 'application/pdf',
+        size: 123456
+      }
+    },
+    source
+  );
+
+  assert.deepEqual(image.media, {
+    kind: 'image',
+    mimeType: 'image/png',
+    size: 123456,
+    width: 800,
+    height: 600,
+    fileName: 'screen.png',
+    documentId: 'document-555',
+    dcId: 2
+  });
+  assert.equal(Object.hasOwn(image, 'transcription'), false);
+  assert.equal(Object.hasOwn(pdf, 'media'), false);
+});
+
 test('listTelegramSources applies allowed source ids', async () => {
   const client = new FakeTelegramClient({ dialogs, messagesBySource: {} });
   const sources = await listTelegramSources({ client, allowedSourceIds: ['1001'] });
@@ -196,12 +278,14 @@ test('syncTelegramMessages stores only whitelisted sources and honors minDate', 
   assert.equal(result.sourceCount, 1);
   assert.equal(result.messageCount, 1);
   assert.equal(result.audioMessageCount, 0);
+  assert.equal(result.imageMessageCount, 0);
   assert.deepEqual(result.sources, [
     {
       sourceId: '1001',
       title: 'Allowed Channel',
       messageCount: 1,
       audioMessageCount: 0,
+      imageMessageCount: 0,
       lastSyncedMessageId: 2,
       incremental: false
     }
@@ -264,11 +348,61 @@ test('syncTelegramMessages stores audio-only messages for later transcription', 
 
   assert.equal(result.messageCount, 1);
   assert.equal(result.audioMessageCount, 1);
+  assert.equal(result.imageMessageCount, 0);
   assert.equal(result.sources[0].audioMessageCount, 1);
   const messages = await store.findMessages({ sourceIds: ['1001'] });
   assert.equal(messages.length, 1);
   assert.equal(messages[0].media.kind, 'audio');
   assert.equal(messages[0].transcription.status, 'pending');
+});
+
+test('syncTelegramMessages stores image-only messages without transcription state', async () => {
+  const client = new FakeTelegramClient({
+    dialogs,
+    messagesBySource: {
+      1001: [
+        {
+          id: 11,
+          date: 1783620000,
+          message: '',
+          photo: {
+            id: { toString: () => 'photo-doc' },
+            dcId: 2,
+            sizes: [
+              { className: 'PhotoSize', w: 1280, h: 720, size: 200000 }
+            ]
+          }
+        }
+      ]
+    }
+  });
+  const store = new MemoryTelegramStore({
+    sources: [{
+      sourceId: '1001',
+      title: 'Allowed Channel',
+      username: 'allowed_channel',
+      type: 'Channel',
+      enabled: true,
+      tags: []
+    }]
+  });
+
+  const result = await syncTelegramMessages({
+    client,
+    store,
+    config: {
+      allowedSourceIds: ['1001'],
+      telegramSyncLimit: 50
+    }
+  });
+
+  assert.equal(result.messageCount, 1);
+  assert.equal(result.audioMessageCount, 0);
+  assert.equal(result.imageMessageCount, 1);
+  assert.equal(result.sources[0].imageMessageCount, 1);
+  const messages = await store.findMessages({ sourceIds: ['1001'] });
+  assert.equal(messages[0].media.kind, 'photo');
+  assert.equal(Object.hasOwn(messages[0], 'transcription'), false);
 });
 
 test('refreshTelegramSources preserves existing DB selection and tags', async () => {

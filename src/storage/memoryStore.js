@@ -341,6 +341,42 @@ export class MemoryTelegramStore {
     return { total, counts };
   }
 
+  async listSourceImages({
+    sourceId,
+    from,
+    to,
+    beforeMessageId,
+    limit = 20
+  } = {}) {
+    const fromDate = from ? new Date(from) : null;
+    const toDate = to ? new Date(to) : null;
+    return this.messages
+      .filter((message) => message.sourceId === sourceId)
+      .filter((message) => ['photo', 'image'].includes(message.media?.kind))
+      .filter((message) => !fromDate || message.date >= fromDate)
+      .filter((message) => !toDate || message.date < toDate)
+      .filter((message) => !beforeMessageId || message.messageId < beforeMessageId)
+      .sort((left, right) => {
+        const dateDifference = right.date - left.date;
+        return dateDifference || right.messageId - left.messageId;
+      })
+      .slice(0, Math.min(limit, 500))
+      .map((message) => ({ ...message, media: { ...message.media }, raw: { ...(message.raw || {}) } }));
+  }
+
+  async getImageMessages({ sourceId, messageIds = [] } = {}) {
+    const byId = new Map(
+      this.messages
+        .filter((message) => message.sourceId === sourceId)
+        .filter((message) => ['photo', 'image'].includes(message.media?.kind))
+        .map((message) => [message.messageId, message])
+    );
+    return messageIds
+      .map((messageId) => byId.get(messageId))
+      .filter(Boolean)
+      .map((message) => ({ ...message, media: { ...message.media }, raw: { ...(message.raw || {}) } }));
+  }
+
   async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {
     const normalizedQuery = sourceQuery.trim().toLowerCase();
     return this.sources

@@ -89,25 +89,81 @@ function telegramAudioAttribute(document) {
   return documentAttribute(document, 'DocumentAttributeAudio');
 }
 
+function telegramImageSizeAttribute(document) {
+  return documentAttribute(document, 'DocumentAttributeImageSize');
+}
+
+function largestPhotoSize(photo) {
+  const sizes = photo?.sizes || [];
+  return sizes
+    .filter((size) => toNumberOrNull(size?.w) && toNumberOrNull(size?.h))
+    .sort((left, right) => {
+      const leftArea = Number(left.w) * Number(left.h);
+      const rightArea = Number(right.w) * Number(right.h);
+      return rightArea - leftArea;
+    })[0] || null;
+}
+
+function photoSizeBytes(size) {
+  const direct = toNumberOrNull(size?.size);
+  if (direct !== null) {
+    return direct;
+  }
+  const progressive = Array.isArray(size?.sizes)
+    ? size.sizes.map(toNumberOrNull).filter((value) => value !== null)
+    : [];
+  return progressive.length ? Math.max(...progressive) : null;
+}
+
 export function normalizeTelegramMedia(message) {
   const voiceDocument = message.voice || null;
   const audioDocument = message.audio || null;
-  const document = voiceDocument || audioDocument;
-  if (!document) {
-    return null;
+  const audio = voiceDocument || audioDocument;
+  if (audio) {
+    const audioAttribute = telegramAudioAttribute(audio);
+    const fileName = telegramDocumentFileName(audio);
+
+    return {
+      kind: voiceDocument ? 'voice' : 'audio',
+      mimeType: audio.mimeType || audio.mime_type || null,
+      size: toNumberOrNull(audio.size),
+      durationSec: toNumberOrNull(audioAttribute?.duration),
+      fileName,
+      title: audioAttribute?.title || null,
+      performer: audioAttribute?.performer || null,
+      documentId: toStringId(audio.id),
+      dcId: toNumberOrNull(audio.dcId || audio.dc_id)
+    };
   }
 
-  const audioAttribute = telegramAudioAttribute(document);
-  const fileName = telegramDocumentFileName(document);
+  const photo = message.photo || message.media?.photo || null;
+  if (photo) {
+    const size = largestPhotoSize(photo);
+    return {
+      kind: 'photo',
+      mimeType: 'image/jpeg',
+      size: photoSizeBytes(size),
+      width: toNumberOrNull(size?.w),
+      height: toNumberOrNull(size?.h),
+      fileName: null,
+      photoId: toStringId(photo.id),
+      dcId: toNumberOrNull(photo.dcId || photo.dc_id)
+    };
+  }
 
+  const document = message.document || message.media?.document || null;
+  const mimeType = document?.mimeType || document?.mime_type || '';
+  if (!document || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType.toLowerCase())) {
+    return null;
+  }
+  const imageSize = telegramImageSizeAttribute(document);
   return {
-    kind: voiceDocument ? 'voice' : 'audio',
-    mimeType: document.mimeType || document.mime_type || null,
+    kind: 'image',
+    mimeType: mimeType.toLowerCase(),
     size: toNumberOrNull(document.size),
-    durationSec: toNumberOrNull(audioAttribute?.duration),
-    fileName,
-    title: audioAttribute?.title || null,
-    performer: audioAttribute?.performer || null,
+    width: toNumberOrNull(imageSize?.w),
+    height: toNumberOrNull(imageSize?.h),
+    fileName: telegramDocumentFileName(document),
     documentId: toStringId(document.id),
     dcId: toNumberOrNull(document.dcId || document.dc_id)
   };
@@ -155,10 +211,12 @@ export function normalizeTelegramMessage(message, source) {
 
   if (media) {
     normalized.media = media;
-    normalized.transcription = {
-      status: 'pending',
-      attempts: 0
-    };
+    if (media.kind === 'voice' || media.kind === 'audio') {
+      normalized.transcription = {
+        status: 'pending',
+        attempts: 0
+      };
+    }
   }
 
   return normalized;
@@ -311,6 +369,7 @@ export async function syncTelegramMessages({
 
   let messageCount = 0;
   let audioMessageCount = 0;
+  let imageMessageCount = 0;
   const perSource = [];
 
   for (const source of sources) {
@@ -351,6 +410,9 @@ export async function syncTelegramMessages({
     const sourceAudioMessageCount = messages.filter(
       (message) => message.media?.kind === 'audio' || message.media?.kind === 'voice'
     ).length;
+    const sourceImageMessageCount = messages.filter(
+      (message) => message.media?.kind === 'photo' || message.media?.kind === 'image'
+    ).length;
     await store.upsertMessages(messages);
     const maxMessageId = messages.reduce(
       (max, message) => Math.max(max, message.messageId),
@@ -362,11 +424,13 @@ export async function syncTelegramMessages({
     });
     messageCount += messages.length;
     audioMessageCount += sourceAudioMessageCount;
+    imageMessageCount += sourceImageMessageCount;
     perSource.push({
       sourceId: source.sourceId,
       title: source.title,
       messageCount: messages.length,
       audioMessageCount: sourceAudioMessageCount,
+      imageMessageCount: sourceImageMessageCount,
       lastSyncedMessageId: maxMessageId || null,
       incremental: Boolean(iterOptions.minId)
     });
@@ -376,6 +440,7 @@ export async function syncTelegramMessages({
     sourceCount: sources.length,
     messageCount,
     audioMessageCount,
+    imageMessageCount,
     sources: perSource
   };
 }

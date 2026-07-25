@@ -92,11 +92,22 @@ function publicMessage(message, sourceById = new Map()) {
     output.media = {
       kind: message.media.kind || 'unknown',
       mimeType: message.media.mimeType || null,
+      size: message.media.size ?? null,
+      width: message.media.width ?? null,
+      height: message.media.height ?? null,
       durationSec: message.media.durationSec ?? null,
       fileName: message.media.fileName || null
     };
     output.transcriptText = message.transcriptText || '';
     output.transcriptionStatus = message.transcription?.status || null;
+    if (message.media.kind === 'photo' || message.media.kind === 'image') {
+      output.hasImage = true;
+      output.mediaRef = {
+        sourceId: message.sourceId,
+        messageId: message.messageId,
+        groupedId: message.raw?.groupedId || null
+      };
+    }
   }
 
   return output;

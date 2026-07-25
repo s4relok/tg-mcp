@@ -195,6 +195,7 @@ export function createTelegramMcpServer({
   config,
   sourceManagementService,
   manualTranscriptionService,
+  imageService,
   syncCoordinator,
   access = {}
 }) {
@@ -295,6 +296,38 @@ export function createTelegramMcpServer({
       run: async () => toolResult(await digestService.getAudioTranscriptionStatus(args))
     })
   );
+
+  if (access.readImages && imageService) {
+    server.registerTool(
+      'list_source_images',
+      {
+        title: 'List Telegram images for one source',
+        description: 'List synchronized image metadata for one exact enabled Telegram source without analyzing or returning image bytes.',
+        inputSchema: {
+          sourceId: z.string().min(1).describe('Exact enabled Telegram source id.'),
+          from: z.string().optional().describe('Optional inclusive ISO date or datetime.'),
+          to: z.string().optional().describe('Optional exclusive ISO date or datetime.'),
+          beforeMessageId: z.number().int().positive().optional()
+            .describe('Pagination cursor: return image messages with a lower Telegram message id.'),
+          limit: z.number().int().min(1)
+            .max(config.mcpImageListMaxLimit || 100)
+            .optional()
+            .describe('Maximum image metadata records. Defaults to 20.')
+        },
+        annotations: {
+          readOnlyHint: true
+        },
+        ...oauthToolMetadata(access, [OAuthScopes.read])
+      },
+      async (args, extra) => runAuthorizedTool({
+        access,
+        config,
+        extra,
+        scopes: [OAuthScopes.read],
+        run: async () => toolResult(await imageService.listSourceImages(args))
+      })
+    );
+  }
 
   if (access.runManualTranscription && manualTranscriptionService) {
     server.registerTool(

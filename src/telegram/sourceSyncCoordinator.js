@@ -18,12 +18,14 @@ function sumResults(results) {
     summary.sourceCount += item.sourceCount || 0;
     summary.messageCount += item.messageCount || 0;
     summary.audioMessageCount += item.audioMessageCount || 0;
+    summary.imageMessageCount += item.imageMessageCount || 0;
     summary.sources.push(...(item.sources || []));
     return summary;
   }, {
     sourceCount: 0,
     messageCount: 0,
     audioMessageCount: 0,
+    imageMessageCount: 0,
     sources: []
   });
 }

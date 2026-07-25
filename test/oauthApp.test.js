@@ -94,6 +94,8 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     mcpSourceManagementEnabled: true,
     mcpManualTranscriptionEnabled: true,
     mcpManualTranscriptionMaxLimit: 10,
+    mcpImageToolsEnabled: true,
+    mcpImageListMaxLimit: 100,
     sourceMutationBatchLimit: 25,
     telegramSyncMaxLimit: 1000
   };
@@ -112,6 +114,15 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
         retryScheduled: 0,
         remainingPending: 0,
         results: []
+      })
+    },
+    imageService: {
+      listSourceImages: async ({ sourceId }) => ({
+        status: 'ok',
+        sourceId,
+        count: 1,
+        images: [{ sourceId, messageId: 77, media: { kind: 'photo' } }],
+        nextBeforeMessageId: null
       })
     },
     oauthTokenVerifier: verifier
@@ -211,6 +222,11 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       enabledSources.structuredContent.sources.map((source) => source.sourceId),
       ['enabled-1']
     );
+    const readerImages = await reader.client.callTool({
+      name: 'list_source_images',
+      arguments: { sourceId: 'enabled-1' }
+    });
+    assert.equal(readerImages.structuredContent.images[0].messageId, 77);
     const disabledEscalation = await reader.client.callTool({
       name: 'list_sources',
       arguments: { includeDisabled: true }

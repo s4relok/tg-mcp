@@ -28,6 +28,7 @@ export class MongoTelegramStore {
       this.messages.createIndex({ sourceId: 1, messageId: 1 }, { unique: true }),
       this.messages.createIndex({ sourceId: 1, date: -1 }),
       this.messages.createIndex({ date: -1 }),
+      this.messages.createIndex({ sourceId: 1, 'media.kind': 1, date: -1, messageId: -1 }),
       this.messages.createIndex({ 'media.kind': 1, 'transcription.status': 1, date: -1 }),
       this.messages.createIndex({ 'transcription.status': 1, 'transcription.lockUntil': 1 }),
       this.digests.createIndex(
@@ -596,6 +597,49 @@ export class MongoTelegramStore {
 
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
     return { total, counts };
+  }
+
+  async listSourceImages({
+    sourceId,
+    from,
+    to,
+    beforeMessageId,
+    limit = 20
+  } = {}) {
+    const filter = {
+      sourceId,
+      'media.kind': { $in: ['photo', 'image'] }
+    };
+    if (from || to) {
+      filter.date = {};
+      if (from) {
+        filter.date.$gte = new Date(from);
+      }
+      if (to) {
+        filter.date.$lt = new Date(to);
+      }
+    }
+    if (beforeMessageId) {
+      filter.messageId = { $lt: beforeMessageId };
+    }
+    return this.messages
+      .find(filter)
+      .sort({ date: -1, messageId: -1 })
+      .limit(Math.min(limit, 500))
+      .toArray();
+  }
+
+  async getImageMessages({ sourceId, messageIds = [] } = {}) {
+    if (!messageIds.length) {
+      return [];
+    }
+    const messages = await this.messages.find({
+      sourceId,
+      messageId: { $in: messageIds },
+      'media.kind': { $in: ['photo', 'image'] }
+    }).toArray();
+    const byId = new Map(messages.map((message) => [message.messageId, message]));
+    return messageIds.map((messageId) => byId.get(messageId)).filter(Boolean);
   }
 
   async listSources({ includeDisabled = false, sourceIds = [], tags = [], sourceQuery = '' } = {}) {

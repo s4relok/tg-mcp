@@ -16,6 +16,7 @@ import {
 import { createOpenApiDocument } from './http/openapi.js';
 import { createManualTranscriptionService } from './audio/manualTranscriptionService.js';
 import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
+import { createTelegramImageService } from './images/imageService.js';
 import { createTelegramMcpServer } from './mcp/server.js';
 import { createReadinessReport } from './services/doctor.js';
 import {
@@ -91,6 +92,7 @@ export function createApp({
   digestService,
   sourceManagementService,
   manualTranscriptionService,
+  imageService,
   syncCoordinator,
   oauthTokenVerifier,
   telegramAdmin = {},
@@ -127,6 +129,10 @@ export function createApp({
     config,
     store,
     runAudioTranscriptions
+  });
+  const telegramImages = imageService || createTelegramImageService({
+    config,
+    store
   });
   const manageSources = sourceManagementService || createSourceManagementService({ store, config, now });
   const sourceSync = syncCoordinator || createTelegramSyncCoordinator({
@@ -430,6 +436,7 @@ export function createApp({
             config,
             sourceManagementService: manageSources,
             manualTranscriptionService: transcribeAudio,
+            imageService: telegramImages,
             syncCoordinator: sourceSync,
             access
           });
@@ -498,6 +505,7 @@ export function createApp({
     manageSources: hasOwnerToken && config.mcpSourceManagementEnabled,
     runSourceSync: hasOwnerToken && config.mcpSourceManagementEnabled,
     runManualTranscription: hasOwnerToken && config.mcpManualTranscriptionEnabled,
+    readImages: hasOwnerToken && config.mcpImageToolsEnabled,
     actor: 'mcp:owner-token'
   });
   if (config.chatGptMcpPath && config.chatGptMcpPath !== config.mcpPath) {
@@ -506,6 +514,7 @@ export function createApp({
       manageSources: false,
       runSourceSync: false,
       runManualTranscription: false,
+      readImages: false,
       actor: 'mcp:read-only'
     });
   }
@@ -516,6 +525,7 @@ export function createApp({
       manageSources: config.mcpSourceManagementEnabled,
       runSourceSync: config.mcpSourceManagementEnabled,
       runManualTranscription: config.mcpManualTranscriptionEnabled,
+      readImages: config.mcpImageToolsEnabled,
       actor: 'mcp:oauth'
     });
   }
