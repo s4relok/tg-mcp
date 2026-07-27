@@ -92,7 +92,8 @@ Telegram user account
 ```
 
 Read access remains the default. Optional authenticated owner MCP access can
-send plain text only to Saved Messages when explicitly enabled.
+send plain text or Telegram Rich Text to Saved Messages when explicitly
+enabled.
 
 ## Mongo collections
 
@@ -200,7 +201,10 @@ surfaces behind fail-closed feature flags.
 `send_telegram_message` (optional owner-only)
 
 - Requires `MCP_MESSAGE_SENDING_ENABLED=true`.
-- Sends one exact plain-text message to Saved Messages.
+- Sends one plain-text or Rich Text message to Saved Messages from the
+  authenticated user account.
+- Rich Text accepts Telegram Rich Markdown, including interactive `- [ ]` and
+  `- [x]` checklist rows.
 - Is non-idempotent and must not be automatically retried after an ambiguous
   failure.
 

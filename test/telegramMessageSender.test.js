@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import {
   createTelegramMessageSender,
-  MAX_TELEGRAM_MESSAGE_LENGTH
+  MAX_TELEGRAM_MESSAGE_LENGTH,
+  MAX_TELEGRAM_RICH_MESSAGE_LENGTH
 } from '../src/telegram/messageSender.js';
 
 test('Telegram message sender sends exact plain text to Saved Messages', async () => {
@@ -42,6 +43,7 @@ test('Telegram message sender sends exact plain text to Saved Messages', async (
   assert.deepEqual(result, {
     status: 'sent',
     destination: { type: 'saved' },
+    format: 'plain_text',
     messageId: 321,
     date: new Date(1785144248 * 1000).toISOString()
   });
@@ -64,7 +66,18 @@ test('Telegram message sender validates requests before connecting', async () =>
   );
   await assert.rejects(
     sender.sendMessage({ text: 'x'.repeat(MAX_TELEGRAM_MESSAGE_LENGTH + 1) }),
-    /text must be at most 4096 characters/
+    /text must be at most 4096 characters for plain_text/
+  );
+  await assert.rejects(
+    sender.sendMessage({
+      text: 'x'.repeat(MAX_TELEGRAM_RICH_MESSAGE_LENGTH + 1),
+      format: 'rich_text'
+    }),
+    /text must be at most 32768 characters for rich_text/
+  );
+  await assert.rejects(
+    sender.sendMessage({ text: 'Invalid format', format: 'markdown' }),
+    /format must be plain_text or rich_text/
   );
   await assert.rejects(
     sender.sendMessage({
@@ -122,5 +135,58 @@ test('Telegram message sender accepts an explicit Saved Messages destination', a
   });
 
   assert.equal(result.destination.type, 'saved');
+  assert.equal(result.format, 'plain_text');
   assert.equal(result.date, '2026-07-27T10:00:00.000Z');
+});
+
+test('Telegram message sender sends Rich Text Markdown through the user MTProto session', async () => {
+  const markdown = '- [ ] Open task\n- [x] Completed task';
+  const peer = { getBytes: () => Buffer.from('c91ea07d', 'hex') };
+  const request = { classType: 'request', marker: 'rich-request' };
+  const calls = [];
+  let disconnectCount = 0;
+  const sender = createTelegramMessageSender({
+    config: {},
+    createClient: async () => ({
+      async getInputEntity(entity) {
+        calls.push({ method: 'getInputEntity', entity });
+        return peer;
+      },
+      async invoke(receivedRequest) {
+        calls.push({ method: 'invoke', request: receivedRequest });
+        return {
+          messageId: 456,
+          date: null
+        };
+      },
+      async sendMessage() {
+        throw new Error('Rich Text must not use the legacy sendMessage helper');
+      },
+      async disconnect() {
+        disconnectCount += 1;
+      }
+    }),
+    createRichMessageRequest: (args) => {
+      assert.deepEqual(args, { peer, markdown });
+      return request;
+    }
+  });
+
+  const result = await sender.sendMessage({
+    text: markdown,
+    format: 'rich_text'
+  });
+
+  assert.deepEqual(calls, [
+    { method: 'getInputEntity', entity: 'me' },
+    { method: 'invoke', request }
+  ]);
+  assert.deepEqual(result, {
+    status: 'sent',
+    destination: { type: 'saved' },
+    format: 'rich_text',
+    messageId: 456,
+    date: null
+  });
+  assert.equal(disconnectCount, 1);
 });

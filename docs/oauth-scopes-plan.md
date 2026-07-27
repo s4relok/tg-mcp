@@ -16,7 +16,7 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 | `telegram:sources:read` | Disabled-source visibility and source settings |
 | `telegram:sources:manage` | Enable/disable sources, edit tags, and update source settings |
 | `telegram:sync:run` | Start an exact, bounded manual source sync or manual audio transcription |
-| `telegram:messages:send` | Send one plain-text message to the owner's Saved Messages |
+| `telegram:messages:send` | Send one plain-text or Rich Text message to the owner's Saved Messages |
 
 `telegram:read` is required for the OAuth MCP transport. Privileged tool calls check their additional scopes at execution time, so a refreshed token with fewer permissions cannot continue using permissions from an older session.
 

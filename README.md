@@ -115,7 +115,7 @@ Available scopes:
 - `telegram:sources:manage`: enable/disable, tags, and settings mutations.
 - `telegram:sync:run`: exact bounded manual sync and manual audio
   transcription.
-- `telegram:messages:send`: send a plain-text message to Saved Messages.
+- `telegram:messages:send`: send a plain-text or Rich Text message to Saved Messages.
 
 The OAuth transport always requires `telegram:read`. Each privileged tool checks its additional scopes against the current request token, including after a session has been initialized. Missing scopes return an MCP `mcp/www_authenticate` challenge so ChatGPT can request authorization again.
 
@@ -184,10 +184,18 @@ Send one plain-text message to the authorized account's Saved Messages:
 npm run cli -- send-message "Text for Saved Messages"
 ```
 
+Send an interactive Rich Text checklist from the authorized user account:
+
+```bash
+npm run cli -- send-message $'- [ ] Open task\n- [x] Completed task' --rich-text
+```
+
 `send-message` uses the existing non-interactive Telegram session, does not
 connect to MongoDB, and currently has no option for selecting another chat or
-group. The text is sent literally without Markdown parsing and must contain
-between 1 and 4096 characters.
+group. Plain text is sent literally without Markdown parsing and must contain
+between 1 and 4096 characters. `--rich-text` sends Telegram Rich Markdown using
+the account's user session and supports up to 32768 characters. Rich Text is a
+Telegram Premium feature; checklist rows use `- [ ]` and `- [x]`.
 
 Useful variants:
 
@@ -308,10 +316,12 @@ remains read-only. On the OAuth endpoint, source tools additionally require
 transcription require `telegram:sync:run`, and `send_telegram_message` requires
 `telegram:messages:send`.
 
-When enabled, `send_telegram_message` accepts only a `text` argument and sends
-the exact plain text to Saved Messages. It is non-idempotent: clients must not
-automatically retry an ambiguous failure. Selecting another chat or group is
-not supported yet.
+When enabled, `send_telegram_message` accepts `text` and an optional `format`.
+The default `plain_text` sends text literally. `rich_text` sends Telegram Rich
+Markdown from the authenticated user account, so task-list rows such as
+`- [ ] Open` and `- [x] Done` are owned by that user and remain interactive.
+The tool is non-idempotent: clients must not automatically retry an ambiguous
+failure. Selecting another chat or group is not supported yet.
 
 Check data freshness:
 

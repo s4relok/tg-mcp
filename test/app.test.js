@@ -814,11 +814,12 @@ test('authenticated owner MCP exposes and executes source management tools when 
     store,
     digestService: createTelegramDigestService(store),
     messageSender: {
-      sendMessage: async ({ text }) => {
-        sentMessages.push(text);
+      sendMessage: async ({ text, format }) => {
+        sentMessages.push({ text, format });
         return {
           status: 'sent',
           destination: { type: 'saved' },
+          format,
           messageId: 9001,
           date: '2026-07-27T10:00:00.000Z'
         };
@@ -934,7 +935,21 @@ test('authenticated owner MCP exposes and executes source management tools when 
     assert.equal(sent.structuredContent.status, 'sent');
     assert.equal(sent.structuredContent.destination.type, 'saved');
     assert.equal(sent.structuredContent.messageId, 9001);
-    assert.deepEqual(sentMessages, ['Owner MCP message']);
+    const richSent = await client.callTool({
+      name: 'send_telegram_message',
+      arguments: {
+        text: '- [ ] Open task\n- [x] Completed task',
+        format: 'rich_text'
+      }
+    });
+    assert.equal(richSent.structuredContent.format, 'rich_text');
+    assert.deepEqual(sentMessages, [
+      { text: 'Owner MCP message', format: 'plain_text' },
+      {
+        text: '- [ ] Open task\n- [x] Completed task',
+        format: 'rich_text'
+      }
+    ]);
 
     const transcribed = await client.callTool({
       name: 'transcribe_source_audio',

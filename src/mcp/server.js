@@ -591,15 +591,19 @@ export function createTelegramMcpServer({
       'send_telegram_message',
       {
         title: 'Send Telegram message',
-        description: 'Send one plain-text message to the authenticated owner account Saved Messages.',
+        description: 'Send one plain-text or Rich Text message from the authenticated owner account to Saved Messages. Rich Text uses Telegram Rich Markdown; task-list rows such as "- [ ] Open" and "- [x] Done" render as interactive checklists owned by the user.',
         inputSchema: {
           text: z.string()
             .min(1)
-            .max(4096)
+            .max(32768)
             .refine((value) => value.trim().length > 0, {
               message: 'text must contain a non-whitespace character'
             })
-            .describe('Exact plain text to send to Saved Messages. Markdown is not parsed.')
+            .describe('Message text. In rich_text format, use Telegram Rich Markdown such as "- [ ] Open task" and "- [x] Completed task".'),
+          format: z.enum(['plain_text', 'rich_text'])
+            .optional()
+            .default('plain_text')
+            .describe('plain_text sends text literally (maximum 4096 characters). rich_text sends Telegram Rich Markdown (maximum 32768 characters).')
         },
         annotations: {
           readOnlyHint: false,
@@ -609,12 +613,12 @@ export function createTelegramMcpServer({
         },
         ...oauthToolMetadata(access, sendScopes)
       },
-      async ({ text }, extra) => runAuthorizedTool({
+      async ({ text, format }, extra) => runAuthorizedTool({
         access,
         config,
         extra,
         scopes: sendScopes,
-        run: async () => toolResult(await messageSender.sendMessage({ text }))
+        run: async () => toolResult(await messageSender.sendMessage({ text, format }))
       })
     );
   }
