@@ -5,10 +5,8 @@ import { createRequire } from 'node:module';
 import {
   createSendRichMessageRequest,
   INPUT_RICH_MESSAGE_MARKDOWN_CONSTRUCTOR_ID,
-  INVOKE_WITH_LAYER_CONSTRUCTOR_ID,
   RICH_MESSAGE_FLAG,
   SEND_MESSAGE_CONSTRUCTOR_ID,
-  TELEGRAM_API_LAYER,
   UPDATE_MESSAGE_ID_CONSTRUCTOR_ID,
   UPDATE_SHORT_SENT_MESSAGE_CONSTRUCTOR_ID
 } from '../src/telegram/richMessageRequest.js';
@@ -28,7 +26,7 @@ function int32(value) {
   return buffer;
 }
 
-test('Rich Text request serializes layer 228 messages.sendMessage with Rich Markdown', () => {
+test('Rich Text request serializes the current messages.sendMessage with Rich Markdown', () => {
   const markdown = '- [ ] Open\n- [x] Done';
   const peerBytes = uint32(0x7da07ec9);
   const randomIdBytes = Buffer.from('0102030405060708', 'hex');
@@ -40,8 +38,6 @@ test('Rich Text request serializes layer 228 messages.sendMessage with Rich Mark
 
   assert.equal(request.classType, 'request');
   assert.deepEqual(request.getBytes(), Buffer.concat([
-    uint32(INVOKE_WITH_LAYER_CONSTRUCTOR_ID),
-    int32(TELEGRAM_API_LAYER),
     uint32(SEND_MESSAGE_CONSTRUCTOR_ID),
     uint32(RICH_MESSAGE_FLAG),
     peerBytes,

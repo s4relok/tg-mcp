@@ -4,8 +4,6 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { serializeBytes } = require('telegram/tl');
 
-const TELEGRAM_API_LAYER = 228;
-const INVOKE_WITH_LAYER_CONSTRUCTOR_ID = 0xda9b0d0d;
 const SEND_MESSAGE_CONSTRUCTOR_ID = 0xfef48f62;
 const INPUT_RICH_MESSAGE_MARKDOWN_CONSTRUCTOR_ID = 0x004b572c;
 const UPDATE_MESSAGE_ID_CONSTRUCTOR_ID = 0x4e90bfd6;
@@ -15,12 +13,6 @@ const RICH_MESSAGE_FLAG = 1 << 23;
 function uint32(value) {
   const buffer = Buffer.alloc(4);
   buffer.writeUInt32LE(value >>> 0);
-  return buffer;
-}
-
-function int32(value) {
-  const buffer = Buffer.alloc(4);
-  buffer.writeInt32LE(value);
   return buffer;
 }
 
@@ -76,16 +68,17 @@ export function createSendRichMessageRequest({
   const stableRandomId = Buffer.from(randomIdBytes);
 
   return {
-    CONSTRUCTOR_ID: INVOKE_WITH_LAYER_CONSTRUCTOR_ID,
+    CONSTRUCTOR_ID: SEND_MESSAGE_CONSTRUCTOR_ID,
     className: 'messages.SendRichTextMessage',
     classType: 'request',
 
     async resolve() {},
 
     getBytes() {
+      // The GramJS connection is already initialized. A second invokeWithLayer
+      // wrapper is rejected, while Telegram accepts this current method
+      // constructor directly on the existing user connection.
       return Buffer.concat([
-        uint32(INVOKE_WITH_LAYER_CONSTRUCTOR_ID),
-        int32(TELEGRAM_API_LAYER),
         uint32(SEND_MESSAGE_CONSTRUCTOR_ID),
         uint32(RICH_MESSAGE_FLAG),
         peer.getBytes(),
@@ -113,10 +106,8 @@ export function createSendRichMessageRequest({
 
 export {
   INPUT_RICH_MESSAGE_MARKDOWN_CONSTRUCTOR_ID,
-  INVOKE_WITH_LAYER_CONSTRUCTOR_ID,
   RICH_MESSAGE_FLAG,
   SEND_MESSAGE_CONSTRUCTOR_ID,
-  TELEGRAM_API_LAYER,
   UPDATE_MESSAGE_ID_CONSTRUCTOR_ID,
   UPDATE_SHORT_SENT_MESSAGE_CONSTRUCTOR_ID
 };
