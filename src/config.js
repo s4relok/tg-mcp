@@ -141,6 +141,7 @@ export function loadConfig(env = process.env) {
     sourceSyncLockSeconds: readNumber(env, 'SOURCE_SYNC_LOCK_SECONDS', 15 * 60),
     sourceMutationBatchLimit: readNumber(env, 'SOURCE_MUTATION_BATCH_LIMIT', 25),
     mcpSourceManagementEnabled: readBoolean(env, 'MCP_SOURCE_MANAGEMENT_ENABLED', false),
+    mcpMessageSendingEnabled: readBoolean(env, 'MCP_MESSAGE_SENDING_ENABLED', false),
     mcpManualTranscriptionEnabled: readBoolean(env, 'MCP_MANUAL_TRANSCRIPTION_ENABLED', false),
     mcpManualTranscriptionMaxLimit: readBoundedNumber(
       env,

@@ -31,7 +31,10 @@ async function listen(app) {
 test('health endpoint reports ok', async () => {
   const store = new MemoryTelegramStore();
   const app = createApp({
-    config: testConfig(),
+    config: {
+      ...testConfig(),
+      mcpMessageSendingEnabled: true
+    },
     store,
     digestService: createTelegramDigestService(store)
   });
@@ -645,6 +648,7 @@ test('MCP endpoint exposes Telegram tools', async () => {
     assert.ok(names.includes('get_audio_transcription_status'));
     assert.ok(names.includes('get_source_summary'));
     assert.ok(names.includes('search_telegram_messages'));
+    assert.equal(names.includes('send_telegram_message'), false);
 
     const prompts = await client.listPrompts();
     const promptNames = prompts.prompts.map((prompt) => prompt.name);
@@ -674,6 +678,48 @@ test('MCP endpoint exposes Telegram tools', async () => {
   }
 });
 
+test('authenticated owner MCP hides message sending while its feature flag is disabled', async () => {
+  const store = new MemoryTelegramStore();
+  const app = createApp({
+    config: {
+      ...testConfig(),
+      appAuthToken: 'secret-token',
+      mcpMessageSendingEnabled: false
+    },
+    store,
+    digestService: createTelegramDigestService(store),
+    messageSender: {
+      sendMessage: async () => {
+        throw new Error('Disabled message sender must not be called');
+      }
+    }
+  });
+  const server = await listen(app);
+
+  try {
+    const { port } = server.address();
+    const client = new Client({ name: 'tg-mcp-owner-disabled-test', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${port}/mcp`),
+      {
+        requestInit: {
+          headers: { Authorization: 'Bearer secret-token' }
+        }
+      }
+    );
+
+    await client.connect(transport);
+    const tools = await client.listTools();
+    assert.equal(
+      tools.tools.some((tool) => tool.name === 'send_telegram_message'),
+      false
+    );
+    await transport.close();
+  } finally {
+    server.close();
+  }
+});
+
 test('ChatGPT MCP path can be exposed without bearer auth', async () => {
   const store = new MemoryTelegramStore({
     sources: [
@@ -686,6 +732,7 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
       ...testConfig(),
       appAuthToken: 'secret-token',
       chatGptMcpPath: '/tg-mcp/chatgpt-test-mcp',
+      mcpMessageSendingEnabled: true,
       mcpManualTranscriptionEnabled: true,
       mcpImageToolsEnabled: true
     },
@@ -727,6 +774,7 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
     assert.equal(tools.tools.some((tool) => tool.name === 'transcribe_source_audio'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'list_source_images'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'get_telegram_images'), false);
+    assert.equal(tools.tools.some((tool) => tool.name === 'send_telegram_message'), false);
     const listTool = tools.tools.find((tool) => tool.name === 'list_sources');
     assert.equal(Object.hasOwn(listTool.inputSchema.properties, 'includeDisabled'), false);
     const sources = await client.callTool({ name: 'list_sources', arguments: {} });
@@ -748,11 +796,13 @@ test('authenticated owner MCP exposes and executes source management tools when 
       tags: ['news']
     }]
   });
+  const sentMessages = [];
   const app = createApp({
     config: {
       ...testConfig(),
       appAuthToken: 'secret-token',
       mcpSourceManagementEnabled: true,
+      mcpMessageSendingEnabled: true,
       mcpManualTranscriptionEnabled: true,
       mcpManualTranscriptionMaxLimit: 10,
       mcpImageToolsEnabled: true,
@@ -763,6 +813,17 @@ test('authenticated owner MCP exposes and executes source management tools when 
     },
     store,
     digestService: createTelegramDigestService(store),
+    messageSender: {
+      sendMessage: async ({ text }) => {
+        sentMessages.push(text);
+        return {
+          status: 'sent',
+          destination: { type: 'saved' },
+          messageId: 9001,
+          date: '2026-07-27T10:00:00.000Z'
+        };
+      }
+    },
     manualTranscriptionService: {
       transcribeSourceAudio: async (args) => ({
         status: 'ok',
@@ -826,6 +887,7 @@ test('authenticated owner MCP exposes and executes source management tools when 
       'set_source_tags',
       'get_source_settings',
       'update_source_settings',
+      'send_telegram_message',
       'sync_source',
       'transcribe_source_audio',
       'list_source_images',
@@ -833,6 +895,11 @@ test('authenticated owner MCP exposes and executes source management tools when 
     ]) {
       assert.ok(names.includes(name), `${name} should be exposed to the owner`);
     }
+    const sendTool = tools.tools.find((tool) => tool.name === 'send_telegram_message');
+    assert.equal(sendTool.annotations.readOnlyHint, false);
+    assert.equal(sendTool.annotations.idempotentHint, false);
+    assert.equal(sendTool.annotations.destructiveHint, false);
+    assert.equal(sendTool.annotations.openWorldHint, true);
 
     const listed = await client.callTool({
       name: 'list_sources',
@@ -859,6 +926,15 @@ test('authenticated owner MCP exposes and executes source management tools when 
     assert.equal(updated.structuredContent.status, 'updated');
     assert.equal(updated.structuredContent.source.effectiveSettings.syncIntervalSeconds, 900);
     assert.equal(store.sourceAudit.length, 2);
+
+    const sent = await client.callTool({
+      name: 'send_telegram_message',
+      arguments: { text: 'Owner MCP message' }
+    });
+    assert.equal(sent.structuredContent.status, 'sent');
+    assert.equal(sent.structuredContent.destination.type, 'saved');
+    assert.equal(sent.structuredContent.messageId, 9001);
+    assert.deepEqual(sentMessages, ['Owner MCP message']);
 
     const transcribed = await client.callTool({
       name: 'transcribe_source_audio',

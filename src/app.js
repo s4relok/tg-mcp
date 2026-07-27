@@ -24,6 +24,7 @@ import {
   SourceManagementError
 } from './services/sourceManagement.js';
 import { selectSource } from './services/sourceAdmin.js';
+import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 import { createAuthorizedTelegramClient, refreshTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
 
@@ -93,6 +94,7 @@ export function createApp({
   sourceManagementService,
   manualTranscriptionService,
   imageService,
+  messageSender,
   syncCoordinator,
   oauthTokenVerifier,
   telegramAdmin = {},
@@ -134,6 +136,7 @@ export function createApp({
     config,
     store
   });
+  const sendTelegramMessage = messageSender || createTelegramMessageSender({ config });
   const manageSources = sourceManagementService || createSourceManagementService({ store, config, now });
   const sourceSync = syncCoordinator || createTelegramSyncCoordinator({
     config,
@@ -438,6 +441,7 @@ export function createApp({
             sourceManagementService: manageSources,
             manualTranscriptionService: transcribeAudio,
             imageService: telegramImages,
+            messageSender: sendTelegramMessage,
             syncCoordinator: sourceSync,
             access
           });
@@ -504,6 +508,7 @@ export function createApp({
   registerMcpRoutes(config.mcpPath, auth, {
     allowDisabledSources: hasOwnerToken,
     manageSources: hasOwnerToken && config.mcpSourceManagementEnabled,
+    sendMessages: hasOwnerToken && config.mcpMessageSendingEnabled,
     runSourceSync: hasOwnerToken && config.mcpSourceManagementEnabled,
     runManualTranscription: hasOwnerToken && config.mcpManualTranscriptionEnabled,
     readImages: hasOwnerToken && config.mcpImageToolsEnabled,
@@ -513,6 +518,7 @@ export function createApp({
     registerMcpRoutes(config.chatGptMcpPath, allowRequest, {
       allowDisabledSources: false,
       manageSources: false,
+      sendMessages: false,
       runSourceSync: false,
       runManualTranscription: false,
       readImages: false,
@@ -524,6 +530,7 @@ export function createApp({
       oauth: true,
       allowDisabledSources: config.mcpSourceManagementEnabled,
       manageSources: config.mcpSourceManagementEnabled,
+      sendMessages: config.mcpMessageSendingEnabled,
       runSourceSync: config.mcpSourceManagementEnabled,
       runManualTranscription: config.mcpManualTranscriptionEnabled,
       readImages: config.mcpImageToolsEnabled,

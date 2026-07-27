@@ -56,7 +56,8 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       OAuthScopes.read,
       OAuthScopes.sourcesRead,
       OAuthScopes.sourcesManage,
-      OAuthScopes.syncRun
+      OAuthScopes.syncRun,
+      OAuthScopes.messagesSend
     ]]
   ]);
   const verifier = {
@@ -92,6 +93,7 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     allowedHosts: ['127.0.0.1', 'localhost'],
     appAuthToken: '',
     mcpSourceManagementEnabled: true,
+    mcpMessageSendingEnabled: true,
     mcpManualTranscriptionEnabled: true,
     mcpManualTranscriptionMaxLimit: 10,
     mcpImageToolsEnabled: true,
@@ -104,6 +106,14 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     config,
     store,
     digestService: createTelegramDigestService(store),
+    messageSender: {
+      sendMessage: async ({ text }) => ({
+        status: 'sent',
+        destination: { type: 'saved' },
+        messageId: text.length,
+        date: '2026-07-27T10:00:00.000Z'
+      })
+    },
     manualTranscriptionService: {
       transcribeSourceAudio: async ({ sourceId, limit }) => ({
         status: 'ok',
@@ -160,7 +170,8 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       OAuthScopes.read,
       OAuthScopes.sourcesRead,
       OAuthScopes.sourcesManage,
-      OAuthScopes.syncRun
+      OAuthScopes.syncRun,
+      OAuthScopes.messagesSend
     ]);
 
     const pathMetadataResponse = await fetch(
@@ -199,6 +210,12 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       type: 'oauth2',
       scopes: [OAuthScopes.read, OAuthScopes.sourcesRead, OAuthScopes.sourcesManage]
     });
+    const sendTool = readerTools.tools.find((tool) => tool.name === 'send_telegram_message');
+    assert.ok(sendTool);
+    assert.deepEqual(sendTool._meta.securitySchemes[0], {
+      type: 'oauth2',
+      scopes: [OAuthScopes.read, OAuthScopes.messagesSend]
+    });
     const crossedIdentityResponse = await fetch(`${baseUrl}${config.oauthMcpPath}`, {
       method: 'POST',
       headers: {
@@ -234,6 +251,10 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     const rawTools = await readJsonRpcResponse(rawToolsResponse);
     const rawEnableTool = rawTools.result.tools.find((tool) => tool.name === 'enable_source');
     assert.deepEqual(rawEnableTool.securitySchemes, rawEnableTool._meta.securitySchemes);
+    const rawSendTool = rawTools.result.tools.find(
+      (tool) => tool.name === 'send_telegram_message'
+    );
+    assert.deepEqual(rawSendTool.securitySchemes, rawSendTool._meta.securitySchemes);
 
     const enabledSources = await reader.client.callTool({ name: 'list_sources', arguments: {} });
     assert.deepEqual(
@@ -273,6 +294,15 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       transcriptionEscalation._meta['mcp/www_authenticate'][0],
       /telegram:sync:run/
     );
+    const sendEscalation = await reader.client.callTool({
+      name: 'send_telegram_message',
+      arguments: { text: 'Reader must not send' }
+    });
+    assert.equal(sendEscalation.isError, true);
+    assert.match(
+      sendEscalation._meta['mcp/www_authenticate'][0],
+      /telegram:messages:send/
+    );
 
     const owner = clientFor(`${baseUrl}${config.oauthMcpPath}`, 'owner-token');
     activeTransports.push(owner.transport);
@@ -296,6 +326,13 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       arguments: { sourceId: 'enabled-1', limit: 2 }
     });
     assert.equal(transcribed.structuredContent.completed, 1);
+    const sent = await owner.client.callTool({
+      name: 'send_telegram_message',
+      arguments: { text: 'OAuth owner message' }
+    });
+    assert.equal(sent.structuredContent.status, 'sent');
+    assert.equal(sent.structuredContent.destination.type, 'saved');
+    assert.equal(sent.structuredContent.messageId, 'OAuth owner message'.length);
 
     tokenScopes.set('owner-token', [OAuthScopes.read]);
     const downgraded = await owner.client.callTool({
@@ -304,6 +341,15 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     });
     assert.equal(downgraded.isError, true);
     assert.match(downgraded._meta['mcp/www_authenticate'][0], /telegram:sources:manage/);
+    const downgradedSend = await owner.client.callTool({
+      name: 'send_telegram_message',
+      arguments: { text: 'Downgraded owner must not send' }
+    });
+    assert.equal(downgradedSend.isError, true);
+    assert.match(
+      downgradedSend._meta['mcp/www_authenticate'][0],
+      /telegram:messages:send/
+    );
   } finally {
     await Promise.allSettled(activeTransports.map((transport) => transport.close()));
     await new Promise((resolve) => server.close(resolve));

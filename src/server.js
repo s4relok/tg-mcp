@@ -7,6 +7,7 @@ import { createTelegramImageService } from './images/imageService.js';
 import { createMongoStore } from './storage/mongoStore.js';
 import { startAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
+import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { startTelegramSyncWorker } from './telegram/syncWorker.js';
 import { startTelegramSlashBot } from './telegram/slashBot.js';
 
@@ -16,6 +17,7 @@ async function main() {
   const store = await createMongoStore(config);
   const digestService = createTelegramDigestService(store);
   const sourceManagementService = createSourceManagementService({ store, config });
+  const messageSender = createTelegramMessageSender({ config });
   const audioTranscriptionWorker = startAudioTranscriptionWorker({ config, store });
   const imageCache = createImageCache({ config, store });
   const imageService = createTelegramImageService({
@@ -43,6 +45,7 @@ async function main() {
     digestService,
     sourceManagementService,
     imageService,
+    messageSender,
     syncCoordinator,
     audioTranscriptionAdmin: {
       runOnce: audioTranscriptionWorker.runOnce

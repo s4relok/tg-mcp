@@ -6,7 +6,8 @@ export const OAuthScopes = Object.freeze({
   read: 'telegram:read',
   sourcesRead: 'telegram:sources:read',
   sourcesManage: 'telegram:sources:manage',
-  syncRun: 'telegram:sync:run'
+  syncRun: 'telegram:sync:run',
+  messagesSend: 'telegram:messages:send'
 });
 
 function stringClaim(payload, name) {
@@ -46,6 +47,9 @@ export function getSupportedOAuthScopes(config) {
   }
   if (config.mcpSourceManagementEnabled || config.mcpManualTranscriptionEnabled) {
     scopes.push(OAuthScopes.syncRun);
+  }
+  if (config.mcpMessageSendingEnabled) {
+    scopes.push(OAuthScopes.messagesSend);
   }
   return scopes;
 }

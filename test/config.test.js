@@ -111,6 +111,7 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
   assert.equal(defaults.sourceDefaultIncludeMedia, true);
   assert.equal(defaults.sourceDefaultPriority, 50);
   assert.equal(defaults.mcpSourceManagementEnabled, false);
+  assert.equal(defaults.mcpMessageSendingEnabled, false);
   assert.equal(defaults.mcpManualTranscriptionEnabled, false);
   assert.equal(defaults.mcpManualTranscriptionMaxLimit, 10);
   assert.equal(defaults.mcpImageToolsEnabled, false);
@@ -120,6 +121,7 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
     SOURCE_DEFAULT_SYNC_INTERVAL_SECONDS: '900',
     SOURCE_DEFAULT_INCLUDE_MEDIA: 'false',
     MCP_SOURCE_MANAGEMENT_ENABLED: 'true',
+    MCP_MESSAGE_SENDING_ENABLED: 'true',
     MCP_MANUAL_TRANSCRIPTION_ENABLED: 'true',
     MCP_IMAGE_TOOLS_ENABLED: 'true',
     IMAGE_CACHE_RETENTION_DAYS: '14'
@@ -127,6 +129,7 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
   assert.equal(configured.sourceDefaultSyncIntervalSeconds, 900);
   assert.equal(configured.sourceDefaultIncludeMedia, false);
   assert.equal(configured.mcpSourceManagementEnabled, true);
+  assert.equal(configured.mcpMessageSendingEnabled, true);
   assert.equal(configured.mcpManualTranscriptionEnabled, true);
   assert.equal(configured.mcpImageToolsEnabled, true);
   assert.equal(configured.imageCacheRetentionDays, 14);

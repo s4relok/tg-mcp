@@ -16,6 +16,7 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 | `telegram:sources:read` | Disabled-source visibility and source settings |
 | `telegram:sources:manage` | Enable/disable sources, edit tags, and update source settings |
 | `telegram:sync:run` | Start an exact, bounded manual source sync or manual audio transcription |
+| `telegram:messages:send` | Send one plain-text message to the owner's Saved Messages |
 
 `telegram:read` is required for the OAuth MCP transport. Privileged tool calls check their additional scopes at execution time, so a refreshed token with fewer permissions cannot continue using permissions from an older session.
 
@@ -28,6 +29,8 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 - [x] Advertise per-tool OAuth schemes through MCP tool metadata and return `mcp/www_authenticate` challenges for incremental scope requests.
 - [x] Bind stateful MCP sessions to route, OAuth subject, and client id; re-check the current token on every request/tool call.
 - [x] Keep source-management tools behind both `MCP_SOURCE_MANAGEMENT_ENABLED` and the required scopes.
+- [x] Keep Saved Messages sending behind `MCP_MESSAGE_SENDING_ENABLED` and the
+  dedicated `telegram:messages:send` scope.
 - [x] Keep manual transcription and image delivery behind independent
   fail-closed feature flags without adding broader OAuth scopes.
 - [x] Complete unit/integration tests, documentation, and final security review.
@@ -50,5 +53,8 @@ For a personal deployment, configure `OAUTH_ALLOWED_SUBJECTS` even when the IdP 
 1. Configure the IdP and test authorization code + PKCE with a staging resource URL.
 2. Set OAuth environment variables while leaving `OAUTH_ENABLED=false`; run configuration and token-verification tests.
 3. Enable OAuth, connect ChatGPT to `OAUTH_RESOURCE`, and validate read-only access first.
-4. Grant source scopes to the owner, enable `MCP_SOURCE_MANAGEMENT_ENABLED`, and verify preview/audit behavior before live mutations.
-5. Retain `APP_AUTH_TOKEN` for CLI/admin/legacy MCP access unless those surfaces are migrated separately.
+4. Grant source scopes to the owner, enable `MCP_SOURCE_MANAGEMENT_ENABLED`,
+   and verify preview/audit behavior before live mutations.
+5. Grant `telegram:messages:send`, enable `MCP_MESSAGE_SENDING_ENABLED`, and
+   verify one Saved Messages send without enabling the no-auth MCP route.
+6. Retain `APP_AUTH_TOKEN` for CLI/admin/legacy MCP access unless those surfaces are migrated separately.

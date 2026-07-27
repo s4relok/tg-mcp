@@ -32,6 +32,7 @@ Telegram digest MCP server that logs into a Telegram user account and works only
   - `list_source_images`
   - `get_telegram_images`
 - Optional authenticated owner MCP tools:
+  - `send_telegram_message`
   - `enable_source`
   - `disable_source`
   - `set_source_tags`
@@ -114,6 +115,7 @@ Available scopes:
 - `telegram:sources:manage`: enable/disable, tags, and settings mutations.
 - `telegram:sync:run`: exact bounded manual sync and manual audio
   transcription.
+- `telegram:messages:send`: send a plain-text message to Saved Messages.
 
 The OAuth transport always requires `telegram:read`. Each privileged tool checks its additional scopes against the current request token, including after a session has been initialized. Missing scopes return an MCP `mcp/www_authenticate` challenge so ChatGPT can request authorization again.
 
@@ -175,6 +177,17 @@ npm run cli -- find-sources project
 npm run cli -- select-source "Project Alpha" --tag work
 npm run cli -- sync
 ```
+
+Send one plain-text message to the authorized account's Saved Messages:
+
+```bash
+npm run cli -- send-message "Text for Saved Messages"
+```
+
+`send-message` uses the existing non-interactive Telegram session, does not
+connect to MongoDB, and currently has no option for selecting another chat or
+group. The text is sent literally without Markdown parsing and must contain
+between 1 and 4096 characters.
 
 Useful variants:
 
@@ -284,11 +297,21 @@ To expose owner write tools on the bearer-protected MCP endpoint, explicitly ena
 
 ```text
 MCP_SOURCE_MANAGEMENT_ENABLED=true
+MCP_MESSAGE_SENDING_ENABLED=true
 MCP_MANUAL_TRANSCRIPTION_ENABLED=true
 MCP_IMAGE_TOOLS_ENABLED=true
 ```
 
-This flag has no effect on the no-auth `CHATGPT_MCP_PATH`; that endpoint remains read-only. On the OAuth endpoint, the same tools additionally require `telegram:sources:read` plus `telegram:sources:manage` (or `telegram:sync:run` for manual sync).
+These flags have no effect on the no-auth `CHATGPT_MCP_PATH`; that endpoint
+remains read-only. On the OAuth endpoint, source tools additionally require
+`telegram:sources:read` plus `telegram:sources:manage`, manual sync and
+transcription require `telegram:sync:run`, and `send_telegram_message` requires
+`telegram:messages:send`.
+
+When enabled, `send_telegram_message` accepts only a `text` argument and sends
+the exact plain text to Saved Messages. It is non-idempotent: clients must not
+automatically retry an ambiguous failure. Selecting another chat or group is
+not supported yet.
 
 Check data freshness:
 

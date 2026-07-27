@@ -30,6 +30,7 @@ test('setupEnvFile creates production env with generated auth token', async () =
   assert.equal(values.NODE_ENV, 'production');
   assert.equal(values.TELEGRAM_SESSION_FILE, '/srv/tg-mcp/shared/sessions/telegram.session');
   assert.equal(values.OPENAI_TRANSCRIPTION_ENABLED, 'false');
+  assert.equal(values.MCP_MESSAGE_SENDING_ENABLED, 'false');
   assert.equal(values.OAUTH_ENABLED, 'false');
   assert.equal(values.OAUTH_MCP_PATH, '/tg-mcp/oauth-mcp');
   assert.equal(values.OAUTH_JWT_ALGORITHMS, 'RS256,ES256');

@@ -16,12 +16,14 @@ import {
   refreshTelegramSources,
   syncTelegramMessages
 } from './telegram/telegramSync.js';
+import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 
 function usage() {
   console.log(`Usage:
   npm run cli -- setup-env [--env-path PATH] [--production] [--force] [--set KEY=VALUE] [--from-env KEY]
   npm run cli -- login [--env-path PATH]
+  npm run cli -- send-message MESSAGE [--env-path PATH]
   npm run cli -- list-sources [--env-path PATH]
   npm run cli -- refresh-sources [--env-path PATH]
   npm run cli -- db-sources [--env-path PATH]
@@ -239,6 +241,15 @@ async function main() {
     if (!result.authorized) {
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (command === 'send-message') {
+    const sender = createTelegramMessageSender({ config });
+    const result = await sender.sendMessage({
+      text: options.positional.join(' ')
+    });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
 

@@ -235,6 +235,7 @@ export function createTelegramMcpServer({
   sourceManagementService,
   manualTranscriptionService,
   imageService,
+  messageSender,
   syncCoordinator,
   access = {}
 }) {
@@ -583,6 +584,40 @@ export function createTelegramMcpServer({
       run: async () => toolResult(await digestService.getActionItems(args))
     })
   );
+
+  if (access.sendMessages && messageSender) {
+    const sendScopes = [OAuthScopes.read, OAuthScopes.messagesSend];
+    server.registerTool(
+      'send_telegram_message',
+      {
+        title: 'Send Telegram message',
+        description: 'Send one plain-text message to the authenticated owner account Saved Messages.',
+        inputSchema: {
+          text: z.string()
+            .min(1)
+            .max(4096)
+            .refine((value) => value.trim().length > 0, {
+              message: 'text must contain a non-whitespace character'
+            })
+            .describe('Exact plain text to send to Saved Messages. Markdown is not parsed.')
+        },
+        annotations: {
+          readOnlyHint: false,
+          idempotentHint: false,
+          destructiveHint: false,
+          openWorldHint: true
+        },
+        ...oauthToolMetadata(access, sendScopes)
+      },
+      async ({ text }, extra) => runAuthorizedTool({
+        access,
+        config,
+        extra,
+        scopes: sendScopes,
+        run: async () => toolResult(await messageSender.sendMessage({ text }))
+      })
+    );
+  }
 
   if (access.manageSources && sourceManagementService) {
     const sourceIdsSchema = z.array(z.string().min(1))

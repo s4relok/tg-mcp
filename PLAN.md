@@ -91,7 +91,8 @@ Telegram user account
    -> ChatGPT web
 ```
 
-The first release is read-only. No sending Telegram messages from ChatGPT.
+Read access remains the default. Optional authenticated owner MCP access can
+send plain text only to Saved Messages when explicitly enabled.
 
 ## Mongo collections
 
@@ -155,7 +156,8 @@ text, senderName, source title/tags
 
 ## MCP tools
 
-Keep tools focused and read-only.
+Keep read tools focused. Register write tools only on authenticated owner
+surfaces behind fail-closed feature flags.
 
 `list_sources`
 
@@ -194,6 +196,13 @@ Keep tools focused and read-only.
 - Use when the user asks what needs attention or follow-up.
 - Inputs: date range and filters.
 - Output: candidate threads with reason, last message, suggested next action.
+
+`send_telegram_message` (optional owner-only)
+
+- Requires `MCP_MESSAGE_SENDING_ENABLED=true`.
+- Sends one exact plain-text message to Saved Messages.
+- Is non-idempotent and must not be automatically retried after an ambiguous
+  failure.
 
 ## Assistant behavior
 
@@ -351,7 +360,7 @@ Acceptance:
 - Docker.
 - PostgreSQL.
 - Vector database.
-- Sending Telegram messages.
+- Sending Telegram messages to arbitrary chats or groups.
 - Public marketplace submission.
 - Complex custom UI inside ChatGPT.
 
