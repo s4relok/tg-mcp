@@ -85,7 +85,9 @@ function publicMessage(message, sourceById = new Map()) {
     date: toIso(message.date),
     senderName: message.senderName || null,
     text: messageText(message),
-    link: message.link || null
+    link: message.link || null,
+    reactions: (message.reactions || []).map((reaction) => ({ ...reaction })),
+    reactionCount: message.reactionCount ?? 0
   };
 
   if (message.media) {

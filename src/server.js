@@ -9,6 +9,7 @@ import { startAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { startTelegramSyncWorker } from './telegram/syncWorker.js';
+import { startTelegramReactionWorker } from './telegram/reactionWorker.js';
 import { startTelegramSlashBot } from './telegram/slashBot.js';
 
 async function main() {
@@ -56,6 +57,7 @@ async function main() {
     store,
     coordinator: syncCoordinator
   });
+  const reactionWorker = startTelegramReactionWorker({ config, store });
   const slashBot = startTelegramSlashBot({ config, digestService });
 
   const server = app.listen(config.port, config.host, () => {
@@ -81,6 +83,7 @@ async function main() {
     server.close(async () => {
       clearTimeout(forceCloseTimer);
       await syncWorker.stop();
+      await reactionWorker.stop();
       await audioTranscriptionWorker.stop();
       await imageCacheJanitor.stop();
       await slashBot.stop();

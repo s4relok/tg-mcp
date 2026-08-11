@@ -290,6 +290,13 @@ The scheduler polls for due sources, orders them by `nextSyncAt` and per-source 
 
 Normal sync is incremental: each source tracks `lastSyncedMessageId` and later runs request only newer Telegram messages. `backfill --days N` intentionally bypasses that cursor for historical imports, but is clamped to the source's `historyDepthDays` setting.
 
+With background sync enabled, a persistent MTProto listener also applies
+`UpdateMessageReactions` events to already stored messages. MCP search,
+context, and digest message objects expose `reactions` (emoji, custom emoji,
+or paid reaction aggregates) and `reactionCount`. Reaction changes invalidate
+cached digests for that source. Run a bounded historical backfill once after
+upgrading to populate reactions that existed before the listener was started.
+
 Per-source settings:
 
 - `syncIntervalSeconds`: `60..604800`, or `null`/CLI `inherit` for the server default.

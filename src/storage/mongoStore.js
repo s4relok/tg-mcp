@@ -393,6 +393,26 @@ export class MongoTelegramStore {
     };
   }
 
+  async updateMessageReactions(sourceId, messageId, reactions) {
+    const now = new Date();
+    const message = await this.messages.findOneAndUpdate(
+      { sourceId, messageId },
+      {
+        $set: {
+          reactions,
+          reactionCount: reactions.reduce((sum, reaction) => sum + reaction.count, 0),
+          updatedAt: now
+        }
+      },
+      { returnDocument: 'after' }
+    );
+    if (!message) {
+      return null;
+    }
+    await this.sources.updateOne({ sourceId }, { $set: { updatedAt: now } });
+    return message;
+  }
+
   async claimNextAudioTranscription({ sourceIds = [], lockMs = 10 * 60 * 1000, now = new Date() } = {}) {
     const filter = {
       'media.kind': { $in: ['audio', 'voice'] },

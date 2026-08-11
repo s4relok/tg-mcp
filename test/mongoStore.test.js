@@ -92,6 +92,32 @@ function createMediaCacheHarness() {
   };
 }
 
+function createReactionUpdateHarness() {
+  const messageOperations = [];
+  const sourceOperations = [];
+  const messages = {
+    findOneAndUpdate: async (...args) => {
+      messageOperations.push(args);
+      return { sourceId: args[0].sourceId, messageId: args[0].messageId };
+    }
+  };
+  const sources = {
+    updateOne: async (...args) => {
+      sourceOperations.push(args);
+      return {};
+    }
+  };
+  const db = {
+    databaseName: 'test',
+    collection: (name) => name === 'tg_messages' ? messages : name === 'tg_sources' ? sources : {}
+  };
+  return {
+    store: new MongoTelegramStore(db, { close: async () => {} }),
+    messageOperations,
+    sourceOperations
+  };
+}
+
 test('upsertSource does not set enabled in both $set and $setOnInsert', async () => {
   const { store, operations } = createStoreHarness();
 
@@ -153,6 +179,22 @@ test('upsertMessages only initializes transcription fields on insert', async () 
   assert.equal(Object.hasOwn(update.$set, 'transcription'), false);
   assert.equal(update.$setOnInsert.transcriptText, '');
   assert.deepEqual(update.$setOnInsert.transcription, { status: 'pending', attempts: 0 });
+});
+
+test('updateMessageReactions replaces aggregates and invalidates source digests', async () => {
+  const { store, messageOperations, sourceOperations } = createReactionUpdateHarness();
+  const reactions = [{ type: 'emoji', emoji: '👍', count: 3, chosen: false }];
+
+  await store.updateMessageReactions('chat-1', 42, reactions);
+
+  const [messageFilter, messageUpdate, messageOptions] = messageOperations[0];
+  assert.deepEqual(messageFilter, { sourceId: 'chat-1', messageId: 42 });
+  assert.deepEqual(messageUpdate.$set.reactions, reactions);
+  assert.equal(messageUpdate.$set.reactionCount, 3);
+  assert.ok(messageUpdate.$set.updatedAt instanceof Date);
+  assert.deepEqual(messageOptions, { returnDocument: 'after' });
+  assert.deepEqual(sourceOperations[0][0], { sourceId: 'chat-1' });
+  assert.equal(sourceOperations[0][1].$set.updatedAt, messageUpdate.$set.updatedAt);
 });
 
 test('updateSourceConfiguration applies an atomic versioned settings patch', async () => {

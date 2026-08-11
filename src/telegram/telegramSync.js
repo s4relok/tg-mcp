@@ -76,6 +76,40 @@ function telegramClassName(value) {
   return value?.className || value?.constructor?.name || '';
 }
 
+function normalizeReaction(reaction) {
+  const className = telegramClassName(reaction);
+  if (className === 'ReactionEmoji') {
+    return { type: 'emoji', emoji: reaction.emoticon };
+  }
+  if (className === 'ReactionCustomEmoji') {
+    return { type: 'custom_emoji', customEmojiDocumentId: toStringId(reaction.documentId) };
+  }
+  if (className === 'ReactionPaid') {
+    return { type: 'paid' };
+  }
+  return null;
+}
+
+export function normalizeTelegramReactions(messageReactions) {
+  const reactions = [];
+  for (const result of messageReactions?.results || []) {
+    const reaction = normalizeReaction(result.reaction);
+    if (!reaction) {
+      continue;
+    }
+    reactions.push({
+      ...reaction,
+      count: toNumberOrNull(result.count) || 0,
+      chosen: result.chosenOrder !== undefined && result.chosenOrder !== null
+    });
+  }
+  return reactions;
+}
+
+export function telegramPeerId(peer) {
+  return toStringId(peer?.channelId ?? peer?.chatId ?? peer?.userId ?? peer?.id);
+}
+
 function documentAttribute(document, expectedClassName) {
   return (document?.attributes || []).find((attribute) => telegramClassName(attribute) === expectedClassName) || null;
 }
@@ -186,6 +220,7 @@ export function normalizeTelegramSource(dialog, { allowedSourceIds = [] } = {}) 
 
 export function normalizeTelegramMessage(message, source) {
   const media = normalizeTelegramMedia(message);
+  const reactions = normalizeTelegramReactions(message.reactions);
   const normalized = {
     sourceId: source.sourceId,
     sourceTitle: source.title,
@@ -197,6 +232,8 @@ export function normalizeTelegramMessage(message, source) {
     transcriptText: '',
     replyToMessageId: message.replyTo?.replyToMsgId || null,
     views: message.views || null,
+    reactions,
+    reactionCount: reactions.reduce((sum, reaction) => sum + reaction.count, 0),
     link: messageLink(source, message.id),
     entities: message.entities || [],
     raw: {

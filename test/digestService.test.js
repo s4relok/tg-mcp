@@ -23,7 +23,9 @@ function createFixtureService() {
         messageId: 2,
         date: '2026-07-09T07:00:00.000Z',
         senderName: 'Mira',
-        text: 'Need to check Telegram sync before deploy?'
+        text: 'Need to check Telegram sync before deploy?',
+        reactions: [{ type: 'emoji', emoji: '👍', count: 2, chosen: false }],
+        reactionCount: 2
       },
       {
         sourceId: 'chat-2',
@@ -148,6 +150,10 @@ test('getDailyDigest summarizes selected Telegram messages', async () => {
   assert.equal(result.decisions.length, 1);
   assert.equal(result.questions.length, 1);
   assert.equal(result.actionItems.length, 1);
+  assert.deepEqual(result.timeline[1].reactions, [
+    { type: 'emoji', emoji: '👍', count: 2, chosen: false }
+  ]);
+  assert.equal(result.timeline[1].reactionCount, 2);
   assert.equal(result.links[0].url, 'https://example.com/spec');
   assert.equal(result.sourceDigests.length, 1);
   assert.equal(result.sourceDigests[0].sourceId, 'chat-1');

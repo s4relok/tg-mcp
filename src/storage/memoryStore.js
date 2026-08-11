@@ -203,6 +203,23 @@ export class MemoryTelegramStore {
     return { insertedOrUpdated: messages.length };
   }
 
+  async updateMessageReactions(sourceId, messageId, reactions) {
+    const message = this.messages.find(
+      (item) => item.sourceId === sourceId && item.messageId === messageId
+    );
+    if (!message) {
+      return null;
+    }
+    message.reactions = reactions.map((reaction) => ({ ...reaction }));
+    message.reactionCount = reactions.reduce((sum, reaction) => sum + reaction.count, 0);
+    message.updatedAt = new Date();
+    const source = this.sources.find((item) => item.sourceId === sourceId);
+    if (source) {
+      source.updatedAt = new Date();
+    }
+    return { ...message };
+  }
+
   async claimNextAudioTranscription({ sourceIds = [], lockMs = 10 * 60 * 1000, now = new Date() } = {}) {
     const candidate = this.messages
       .filter((message) => ['audio', 'voice'].includes(message.media?.kind))

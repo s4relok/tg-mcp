@@ -6,6 +6,7 @@ import {
   createTelegramLoginReport,
   listTelegramSources,
   normalizeTelegramMessage,
+  normalizeTelegramReactions,
   normalizeTelegramSource,
   refreshTelegramSources,
   syncTelegramMessages
@@ -102,7 +103,27 @@ test('normalizeTelegramMessage maps Telegram fields into storage shape', () => {
       replyTo: { replyToMsgId: 41 },
       views: 123,
       groupedId: { toString: () => '999' },
-      post: true
+      post: true,
+      reactions: {
+        results: [
+          {
+            reaction: { className: 'ReactionEmoji', emoticon: '👍' },
+            count: 3,
+            chosenOrder: 0
+          },
+          {
+            reaction: {
+              className: 'ReactionCustomEmoji',
+              documentId: { toString: () => '123456789' }
+            },
+            count: 2
+          },
+          {
+            reaction: { className: 'ReactionPaid' },
+            count: 1
+          }
+        ]
+      }
     },
     source
   );
@@ -114,6 +135,22 @@ test('normalizeTelegramMessage maps Telegram fields into storage shape', () => {
   assert.equal(message.link, 'https://t.me/allowed_channel/42');
   assert.equal(message.raw.groupedId, '999');
   assert.equal(message.raw.post, true);
+  assert.deepEqual(message.reactions, [
+    { type: 'emoji', emoji: '👍', count: 3, chosen: true },
+    { type: 'custom_emoji', customEmojiDocumentId: '123456789', count: 2, chosen: false },
+    { type: 'paid', count: 1, chosen: false }
+  ]);
+  assert.equal(message.reactionCount, 6);
+});
+
+test('normalizeTelegramReactions ignores unsupported and empty reaction variants', () => {
+  assert.deepEqual(normalizeTelegramReactions({
+    results: [
+      { reaction: { className: 'ReactionEmpty' }, count: 1 },
+      { reaction: { className: 'FutureReaction' }, count: 2 }
+    ]
+  }), []);
+  assert.deepEqual(normalizeTelegramReactions(null), []);
 });
 
 test('normalizeTelegramMessage maps Telegram voice metadata into transcription queue fields', () => {
@@ -272,7 +309,8 @@ test('syncTelegramMessages stores only whitelisted sources and honors minDate', 
       allowedSourceIds: ['1001'],
       telegramSyncLimit: 50
     },
-    minDate: new Date('2026-07-09T00:00:00.000Z')
+    minDate: new Date('2026-07-09T00:00:00.000Z'),
+    now: new Date('2026-07-10T00:00:00.000Z')
   });
 
   assert.equal(result.sourceCount, 1);
@@ -343,7 +381,8 @@ test('syncTelegramMessages stores audio-only messages for later transcription', 
     config: {
       allowedSourceIds: ['1001'],
       telegramSyncLimit: 50
-    }
+    },
+    now: new Date('2026-07-10T00:00:00.000Z')
   });
 
   assert.equal(result.messageCount, 1);
@@ -393,7 +432,8 @@ test('syncTelegramMessages stores image-only messages without transcription stat
     config: {
       allowedSourceIds: ['1001'],
       telegramSyncLimit: 50
-    }
+    },
+    now: new Date('2026-07-10T00:00:00.000Z')
   });
 
   assert.equal(result.messageCount, 1);
@@ -462,7 +502,8 @@ test('syncTelegramMessages uses DB-enabled sources when env whitelist is empty',
     config: {
       allowedSourceIds: [],
       telegramSyncLimit: 10
-    }
+    },
+    now: new Date('2026-07-10T00:00:00.000Z')
   });
 
   assert.equal(result.sourceCount, 1);
@@ -502,7 +543,8 @@ test('syncTelegramMessages uses lastSyncedMessageId as minId for incremental syn
     config: {
       allowedSourceIds: [],
       telegramSyncLimit: 10
-    }
+    },
+    now: new Date('2026-07-10T00:00:00.000Z')
   });
 
   assert.deepEqual(client.iterCalls, [
