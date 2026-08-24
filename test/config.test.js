@@ -114,6 +114,10 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
   assert.equal(defaults.mcpMessageSendingEnabled, false);
   assert.equal(defaults.mcpManualTranscriptionEnabled, false);
   assert.equal(defaults.mcpManualTranscriptionMaxLimit, 10);
+  assert.equal(defaults.mcpAudioToolsEnabled, false);
+  assert.equal(defaults.mcpAudioGetMaxItems, 3);
+  assert.equal(defaults.mcpAudioMaxFileBytes, 10 * 1024 * 1024);
+  assert.equal(defaults.mcpAudioMaxTotalBytes, 20 * 1024 * 1024);
   assert.equal(defaults.mcpImageToolsEnabled, false);
   assert.equal(defaults.imageCacheRetentionDays, 30);
 
@@ -123,6 +127,10 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
     MCP_SOURCE_MANAGEMENT_ENABLED: 'true',
     MCP_MESSAGE_SENDING_ENABLED: 'true',
     MCP_MANUAL_TRANSCRIPTION_ENABLED: 'true',
+    MCP_AUDIO_TOOLS_ENABLED: 'true',
+    MCP_AUDIO_GET_MAX_ITEMS: '2',
+    MCP_AUDIO_MAX_FILE_BYTES: '2097152',
+    MCP_AUDIO_MAX_TOTAL_BYTES: '3145728',
     MCP_IMAGE_TOOLS_ENABLED: 'true',
     IMAGE_CACHE_RETENTION_DAYS: '14'
   });
@@ -131,6 +139,10 @@ test('loadConfig exposes fail-closed source management and scheduler defaults', 
   assert.equal(configured.mcpSourceManagementEnabled, true);
   assert.equal(configured.mcpMessageSendingEnabled, true);
   assert.equal(configured.mcpManualTranscriptionEnabled, true);
+  assert.equal(configured.mcpAudioToolsEnabled, true);
+  assert.equal(configured.mcpAudioGetMaxItems, 2);
+  assert.equal(configured.mcpAudioMaxFileBytes, 2097152);
+  assert.equal(configured.mcpAudioMaxTotalBytes, 3145728);
   assert.equal(configured.mcpImageToolsEnabled, true);
   assert.equal(configured.imageCacheRetentionDays, 14);
 

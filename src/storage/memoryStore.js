@@ -402,6 +402,22 @@ export class MemoryTelegramStore {
       .map((message) => ({ ...message, media: { ...message.media }, raw: { ...(message.raw || {}) } }));
   }
 
+  async getMessagesByIds({ sourceId, messageIds = [] } = {}) {
+    const byId = new Map(
+      this.messages
+        .filter((message) => message.sourceId === sourceId)
+        .map((message) => [message.messageId, message])
+    );
+    return messageIds
+      .map((messageId) => byId.get(messageId))
+      .filter(Boolean)
+      .map((message) => ({
+        ...message,
+        ...(message.media ? { media: { ...message.media } } : {}),
+        raw: { ...(message.raw || {}) }
+      }));
+  }
+
   async getMediaCacheEntries({ sourceId, messageIds = [] } = {}) {
     const idSet = new Set(messageIds);
     const entries = this.mediaCache

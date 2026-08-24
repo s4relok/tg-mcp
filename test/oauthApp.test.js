@@ -96,6 +96,8 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
     mcpMessageSendingEnabled: true,
     mcpManualTranscriptionEnabled: true,
     mcpManualTranscriptionMaxLimit: 10,
+    mcpAudioToolsEnabled: true,
+    mcpAudioGetMaxItems: 3,
     mcpImageToolsEnabled: true,
     mcpImageListMaxLimit: 100,
     mcpImageGetMaxItems: 5,
@@ -125,6 +127,29 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
         retryScheduled: 0,
         remainingPending: 0,
         results: []
+      })
+    },
+    audioService: {
+      getTelegramAudio: async ({ sourceId, messageIds }) => ({
+        status: 'ok',
+        sourceId,
+        requested: messageIds.length,
+        succeeded: 1,
+        failed: 0,
+        totalBytes: 5,
+        items: [{
+          messageId: messageIds[0],
+          status: 'ok',
+          audio: {
+            sourceId,
+            messageId: messageIds[0],
+            media: { kind: 'voice', mimeType: 'audio/ogg', size: 5 }
+          },
+          mimeType: 'audio/ogg',
+          fileName: 'voice.ogg',
+          size: 5,
+          data: Buffer.from('audio').toString('base64')
+        }]
       })
     },
     imageService: {
@@ -271,6 +296,12 @@ test('OAuth MCP publishes metadata, challenges clients, and enforces current too
       arguments: { sourceId: 'enabled-1', messageIds: [77] }
     });
     assert.equal(readerImage.content.some((item) => item.type === 'image'), true);
+    const readerAudio = await reader.client.callTool({
+      name: 'get_telegram_audio',
+      arguments: { sourceId: 'enabled-1', messageIds: [75606] }
+    });
+    assert.equal(readerAudio.content.some((item) => item.type === 'audio'), true);
+    assert.equal(readerAudio.structuredContent.items[0].mimeType, 'audio/ogg');
     const disabledEscalation = await reader.client.callTool({
       name: 'list_sources',
       arguments: { includeDisabled: true }

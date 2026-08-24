@@ -1,6 +1,7 @@
 import { assertSafeRuntimeConfig, loadConfigFromProcessEnv } from './config.js';
 import { createApp } from './app.js';
 import { createTelegramDigestService } from './services/digestService.js';
+import { createTelegramAudioService } from './audio/audioService.js';
 import { createSourceManagementService } from './services/sourceManagement.js';
 import { createImageCache, startImageCacheJanitor } from './images/imageCache.js';
 import { createTelegramImageService } from './images/imageService.js';
@@ -19,6 +20,7 @@ async function main() {
   const digestService = createTelegramDigestService(store);
   const sourceManagementService = createSourceManagementService({ store, config });
   const messageSender = createTelegramMessageSender({ config });
+  const audioService = createTelegramAudioService({ config, store });
   const audioTranscriptionWorker = startAudioTranscriptionWorker({ config, store });
   const imageCache = createImageCache({ config, store });
   const imageService = createTelegramImageService({
@@ -45,6 +47,7 @@ async function main() {
     store,
     digestService,
     sourceManagementService,
+    audioService,
     imageService,
     messageSender,
     syncCoordinator,

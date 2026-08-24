@@ -52,6 +52,45 @@ function imageToolResult(data) {
   };
 }
 
+function audioToolResult(data) {
+  const items = (data.items || []).map(({ data: _base64, ...item }) => item);
+  const structuredContent = {
+    ...data,
+    items
+  };
+  const content = [
+    {
+      type: 'text',
+      text: JSON.stringify(structuredContent, null, 2)
+    }
+  ];
+  for (const item of data.items || []) {
+    if (item.status !== 'ok' || !item.data) {
+      continue;
+    }
+    content.push({
+      type: 'text',
+      text: JSON.stringify({
+        sourceId: data.sourceId,
+        messageId: item.messageId,
+        audio: item.audio,
+        mimeType: item.mimeType,
+        fileName: item.fileName,
+        size: item.size
+      }, null, 2)
+    });
+    content.push({
+      type: 'audio',
+      data: item.data,
+      mimeType: item.mimeType
+    });
+  }
+  return {
+    content,
+    structuredContent
+  };
+}
+
 function oauthToolMetadata(access, scopes) {
   if (!access.oauth) {
     return {};
@@ -234,6 +273,7 @@ export function createTelegramMcpServer({
   config,
   sourceManagementService,
   manualTranscriptionService,
+  audioService,
   imageService,
   messageSender,
   syncCoordinator,
@@ -336,6 +376,35 @@ export function createTelegramMcpServer({
       run: async () => toolResult(await digestService.getAudioTranscriptionStatus(args))
     })
   );
+
+  if (access.readAudio && audioService) {
+    server.registerTool(
+      'get_telegram_audio',
+      {
+        title: 'Get original Telegram audio',
+        description: 'Return original, untranscoded voice/audio bytes from one exact enabled Telegram source as MCP audio content. Only explicit bounded message ids are accepted.',
+        inputSchema: {
+          sourceId: z.string().min(1).describe('Exact enabled Telegram source id.'),
+          messageIds: z.array(z.number().int().positive())
+            .min(1)
+            .max(config.mcpAudioGetMaxItems || 3)
+            .describe('Exact Telegram voice/audio message ids from message search or context results.')
+        },
+        annotations: {
+          readOnlyHint: true,
+          openWorldHint: true
+        },
+        ...oauthToolMetadata(access, [OAuthScopes.read])
+      },
+      async (args, extra) => runAuthorizedTool({
+        access,
+        config,
+        extra,
+        scopes: [OAuthScopes.read],
+        run: async () => audioToolResult(await audioService.getTelegramAudio(args))
+      })
+    );
+  }
 
   if (access.readImages && imageService) {
     server.registerTool(

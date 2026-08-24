@@ -10,12 +10,17 @@ mkdir -p \
   "$APP_DIR/releases" \
   "$APP_DIR/shared/logs" \
   "$APP_DIR/shared/sessions" \
+  "$APP_DIR/shared/audio-work" \
   "$APP_DIR/shared/image-cache"
 
 if [ "$(id -u)" -eq 0 ] && id s4relok >/dev/null 2>&1; then
-  chown s4relok:www-data "$APP_DIR/shared/image-cache"
+  chown s4relok:www-data \
+    "$APP_DIR/shared/audio-work" \
+    "$APP_DIR/shared/image-cache"
 fi
-chmod 0700 "$APP_DIR/shared/image-cache"
+chmod 0700 \
+  "$APP_DIR/shared/audio-work" \
+  "$APP_DIR/shared/image-cache"
 
 if [ ! -e "$APP_DIR/shared/node" ] && [ -d "$NODE_SOURCE" ]; then
   ln -s "$NODE_SOURCE" "$APP_DIR/shared/node"

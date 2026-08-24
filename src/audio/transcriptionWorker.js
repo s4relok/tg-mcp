@@ -95,7 +95,8 @@ export async function processAudioTranscriptionJob({
       client,
       message,
       job,
-      workDir: config.audioTranscriptionWorkDir
+      workDir: config.audioTranscriptionWorkDir,
+      maxFileBytes: config.audioTranscriptionMaxFileBytes
     });
     const result = await transcriber.transcribe(downloaded.filePath, {
       durationSec: job.media?.durationSec || null

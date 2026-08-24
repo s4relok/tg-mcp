@@ -245,3 +245,36 @@ test('createReadinessReport validates the enabled 30-day image cache directory',
   assert.equal(check.status, 'ok');
   assert.equal(check.details.retentionDays, 30);
 });
+
+test('createReadinessReport validates the private audio work directory when original audio is enabled', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-mcp-doctor-audio-'));
+  const missingDirectory = path.join(tmp, 'missing');
+  const missing = await createReadinessReport({
+    config: baseConfig({
+      mcpAudioToolsEnabled: true,
+      audioTranscriptionWorkDir: missingDirectory
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+  assert.ok(missing.checks.some(
+    (check) => check.name === 'audio_work_dir' && check.status === 'warning'
+  ));
+  assert.ok(missing.nextSteps.some((step) => step.id === 'prepare_audio_work_dir'));
+
+  const directory = path.join(tmp, 'audio-work');
+  await fs.mkdir(directory);
+  const ready = await createReadinessReport({
+    config: baseConfig({
+      mcpAudioToolsEnabled: true,
+      audioTranscriptionWorkDir: directory
+    }),
+    store: new MemoryTelegramStore({
+      sources: [{ sourceId: 'chat-1', title: 'Chat', enabled: true, tags: [] }]
+    })
+  });
+  const check = ready.checks.find((item) => item.name === 'audio_work_dir');
+  assert.equal(check.status, 'ok');
+  assert.equal(check.details.directory, directory);
+});

@@ -40,6 +40,10 @@ test('setupEnvFile creates production env with generated auth token', async () =
   assert.equal(values.AUDIO_TRANSCRIPTION_INTERVAL_SECONDS, '3600');
   assert.equal(values.AUDIO_TRANSCRIPTION_BATCH_SIZE, '1');
   assert.equal(values.AUDIO_TRANSCRIPTION_WORK_DIR, '/srv/tg-mcp/shared/audio-work');
+  assert.equal(values.MCP_AUDIO_TOOLS_ENABLED, 'false');
+  assert.equal(values.MCP_AUDIO_GET_MAX_ITEMS, '3');
+  assert.equal(values.MCP_AUDIO_MAX_FILE_BYTES, String(10 * 1024 * 1024));
+  assert.equal(values.MCP_AUDIO_MAX_TOTAL_BYTES, String(20 * 1024 * 1024));
   assert.equal(values.APP_AUTH_TOKEN, 'fixed-token');
   assert.equal(values.ALLOW_UNAUTHENTICATED, 'false');
 });

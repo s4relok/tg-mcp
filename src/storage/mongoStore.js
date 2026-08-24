@@ -667,6 +667,18 @@ export class MongoTelegramStore {
     return messageIds.map((messageId) => byId.get(messageId)).filter(Boolean);
   }
 
+  async getMessagesByIds({ sourceId, messageIds = [] } = {}) {
+    if (!messageIds.length) {
+      return [];
+    }
+    const messages = await this.messages.find({
+      sourceId,
+      messageId: { $in: messageIds }
+    }).toArray();
+    const byId = new Map(messages.map((message) => [message.messageId, message]));
+    return messageIds.map((messageId) => byId.get(messageId)).filter(Boolean);
+  }
+
   async getMediaCacheEntries({ sourceId, messageIds = [] } = {}) {
     const filter = { sourceId };
     if (messageIds.length) {

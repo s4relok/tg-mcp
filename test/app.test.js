@@ -734,6 +734,7 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
       chatGptMcpPath: '/tg-mcp/chatgpt-test-mcp',
       mcpMessageSendingEnabled: true,
       mcpManualTranscriptionEnabled: true,
+      mcpAudioToolsEnabled: true,
       mcpImageToolsEnabled: true
     },
     store,
@@ -772,6 +773,7 @@ test('ChatGPT MCP path can be exposed without bearer auth', async () => {
     assert.ok(tools.tools.some((tool) => tool.name === 'get_daily_digest'));
     assert.equal(tools.tools.some((tool) => tool.name === 'enable_source'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'transcribe_source_audio'), false);
+    assert.equal(tools.tools.some((tool) => tool.name === 'get_telegram_audio'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'list_source_images'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'get_telegram_images'), false);
     assert.equal(tools.tools.some((tool) => tool.name === 'send_telegram_message'), false);
@@ -805,6 +807,8 @@ test('authenticated owner MCP exposes and executes source management tools when 
       mcpMessageSendingEnabled: true,
       mcpManualTranscriptionEnabled: true,
       mcpManualTranscriptionMaxLimit: 10,
+      mcpAudioToolsEnabled: true,
+      mcpAudioGetMaxItems: 3,
       mcpImageToolsEnabled: true,
       mcpImageListMaxLimit: 100,
       mcpImageGetMaxItems: 5,
@@ -836,6 +840,34 @@ test('authenticated owner MCP exposes and executes source management tools when 
         retryScheduled: 0,
         remainingPending: 0,
         results: [{ messageId: 42, status: 'done' }]
+      })
+    },
+    audioService: {
+      getTelegramAudio: async ({ sourceId, messageIds }) => ({
+        status: 'ok',
+        sourceId,
+        requested: messageIds.length,
+        succeeded: 1,
+        failed: 0,
+        totalBytes: 10,
+        items: [{
+          messageId: messageIds[0],
+          status: 'ok',
+          audio: {
+            sourceId,
+            messageId: messageIds[0],
+            media: {
+              kind: 'voice',
+              mimeType: 'audio/ogg',
+              size: 10,
+              fileName: 'voice.ogg'
+            }
+          },
+          mimeType: 'audio/ogg',
+          fileName: 'voice.ogg',
+          size: 10,
+          data: Buffer.from('test-audio').toString('base64')
+        }]
       })
     },
     imageService: {
@@ -891,6 +923,7 @@ test('authenticated owner MCP exposes and executes source management tools when 
       'send_telegram_message',
       'sync_source',
       'transcribe_source_audio',
+      'get_telegram_audio',
       'list_source_images',
       'get_telegram_images'
     ]) {
@@ -957,6 +990,14 @@ test('authenticated owner MCP exposes and executes source management tools when 
     });
     assert.equal(transcribed.structuredContent.completed, 1);
     assert.equal(transcribed.structuredContent.sourceId, 'channel-1');
+
+    const audio = await client.callTool({
+      name: 'get_telegram_audio',
+      arguments: { sourceId: 'channel-1', messageIds: [42] }
+    });
+    assert.equal(audio.content.some((item) => item.type === 'audio'), true);
+    assert.equal(audio.structuredContent.items[0].mimeType, 'audio/ogg');
+    assert.equal(Object.hasOwn(audio.structuredContent.items[0], 'data'), false);
 
     const images = await client.callTool({
       name: 'list_source_images',

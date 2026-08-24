@@ -2,6 +2,9 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 const MIME_EXTENSIONS = new Map([
+  ['audio/aac', '.aac'],
+  ['audio/flac', '.flac'],
+  ['audio/x-flac', '.flac'],
   ['audio/mpeg', '.mp3'],
   ['audio/mp3', '.mp3'],
   ['audio/mp4', '.m4a'],
@@ -13,6 +16,10 @@ const MIME_EXTENSIONS = new Map([
   ['audio/webm', '.webm'],
   ['video/mp4', '.mp4']
 ]);
+
+const MCP_AUDIO_MIME_TYPES = new Set(
+  [...MIME_EXTENSIONS.keys()].filter((mimeType) => mimeType.startsWith('audio/'))
+);
 
 function safePart(value) {
   return String(value)
@@ -28,6 +35,30 @@ function extensionFromMedia(media = {}) {
     return fileExtension;
   }
   return MIME_EXTENSIONS.get(media.mimeType || '') || '.audio';
+}
+
+export function normalizeMcpAudioMimeType(value) {
+  const mimeType = String(value || '').trim().toLowerCase().split(';', 1)[0];
+  return MCP_AUDIO_MIME_TYPES.has(mimeType) ? mimeType : null;
+}
+
+export function mcpAudioExtension(mimeType) {
+  return MIME_EXTENSIONS.get(normalizeMcpAudioMimeType(mimeType)) || '.audio';
+}
+
+export function telegramMessageAudioDocument(message) {
+  const direct = message?.voice || message?.audio || null;
+  if (direct) {
+    return direct;
+  }
+  const document = message?.document || message?.media?.document || null;
+  const attributes = document?.attributes || [];
+  return attributes.some((attribute) => (
+    attribute?.className === 'DocumentAttributeAudio'
+    || attribute?.constructor?.name === 'DocumentAttributeAudio'
+  ))
+    ? document
+    : null;
 }
 
 const sourceEntityCache = new WeakMap();
@@ -79,13 +110,21 @@ export async function downloadTelegramAudioMessage({
   client,
   message,
   job,
-  workDir
+  workDir,
+  maxFileBytes
 }) {
   if (!message) {
     throw new Error(`Telegram message was not found: ${job.sourceId}/${job.messageId}`);
   }
 
   const media = job.media || {};
+  if (
+    maxFileBytes
+    && Number.isFinite(Number(media.size))
+    && Number(media.size) > maxFileBytes
+  ) {
+    throw new Error(`Audio exceeds the ${maxFileBytes} byte limit`);
+  }
   const fileName = [
     safePart(job.sourceId),
     safePart(job.messageId),
@@ -94,20 +133,43 @@ export async function downloadTelegramAudioMessage({
   await fsp.mkdir(workDir, { recursive: true });
   const filePath = path.join(workDir, fileName);
 
-  const downloaded = typeof message.downloadMedia === 'function'
-    ? await message.downloadMedia({ outputFile: filePath })
-    : await client.downloadMedia(message, { outputFile: filePath });
-  const outputPath = typeof downloaded === 'string' ? downloaded : filePath;
-  if (Buffer.isBuffer(downloaded)) {
-    await fsp.writeFile(outputPath, downloaded);
-  }
-  const stat = await fsp.stat(outputPath);
-  if (stat.size === 0) {
-    throw new Error(`Telegram media download produced an empty file: ${job.sourceId}/${job.messageId}`);
-  }
+  const progressCallback = maxFileBytes
+    ? async (downloadedBytes) => {
+        const downloadedSize = Number(downloadedBytes?.toString?.() ?? downloadedBytes);
+        if (Number.isFinite(downloadedSize) && downloadedSize > maxFileBytes) {
+          throw new Error(`Audio exceeds the ${maxFileBytes} byte limit`);
+        }
+      }
+    : undefined;
 
-  return {
-    filePath: outputPath,
-    size: stat.size
-  };
+  try {
+    const downloadParams = {
+      outputFile: filePath,
+      ...(progressCallback ? { progressCallback } : {})
+    };
+    const downloaded = typeof message.downloadMedia === 'function'
+      ? await message.downloadMedia(downloadParams)
+      : await client.downloadMedia(message, downloadParams);
+    if (typeof downloaded === 'string' && path.resolve(downloaded) !== path.resolve(filePath)) {
+      throw new Error('Telegram media download returned an unexpected file path');
+    }
+    if (Buffer.isBuffer(downloaded)) {
+      await fsp.writeFile(filePath, downloaded);
+    }
+    const stat = await fsp.stat(filePath);
+    if (stat.size === 0) {
+      throw new Error(`Telegram media download produced an empty file: ${job.sourceId}/${job.messageId}`);
+    }
+    if (maxFileBytes && stat.size > maxFileBytes) {
+      throw new Error(`Audio exceeds the ${maxFileBytes} byte limit`);
+    }
+
+    return {
+      filePath,
+      size: stat.size
+    };
+  } catch (error) {
+    await fsp.rm(filePath, { force: true }).catch(() => {});
+    throw error;
+  }
 }

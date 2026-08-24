@@ -15,6 +15,7 @@ import {
 } from './http/oauth.js';
 import { createOpenApiDocument } from './http/openapi.js';
 import { createManualTranscriptionService } from './audio/manualTranscriptionService.js';
+import { createTelegramAudioService } from './audio/audioService.js';
 import { createAudioTranscriptionWorker } from './audio/transcriptionWorker.js';
 import { createTelegramImageService } from './images/imageService.js';
 import { createTelegramMcpServer } from './mcp/server.js';
@@ -93,6 +94,7 @@ export function createApp({
   digestService,
   sourceManagementService,
   manualTranscriptionService,
+  audioService,
   imageService,
   messageSender,
   syncCoordinator,
@@ -131,6 +133,11 @@ export function createApp({
     config,
     store,
     runAudioTranscriptions
+  });
+  const telegramAudio = audioService || createTelegramAudioService({
+    config,
+    store,
+    createClient: createTelegramClient
   });
   const telegramImages = imageService || createTelegramImageService({
     config,
@@ -440,6 +447,7 @@ export function createApp({
             config,
             sourceManagementService: manageSources,
             manualTranscriptionService: transcribeAudio,
+            audioService: telegramAudio,
             imageService: telegramImages,
             messageSender: sendTelegramMessage,
             syncCoordinator: sourceSync,
@@ -511,6 +519,7 @@ export function createApp({
     sendMessages: hasOwnerToken && config.mcpMessageSendingEnabled,
     runSourceSync: hasOwnerToken && config.mcpSourceManagementEnabled,
     runManualTranscription: hasOwnerToken && config.mcpManualTranscriptionEnabled,
+    readAudio: hasOwnerToken && config.mcpAudioToolsEnabled,
     readImages: hasOwnerToken && config.mcpImageToolsEnabled,
     actor: 'mcp:owner-token'
   });
@@ -521,6 +530,7 @@ export function createApp({
       sendMessages: false,
       runSourceSync: false,
       runManualTranscription: false,
+      readAudio: false,
       readImages: false,
       actor: 'mcp:read-only'
     });
@@ -533,6 +543,7 @@ export function createApp({
       sendMessages: config.mcpMessageSendingEnabled,
       runSourceSync: config.mcpSourceManagementEnabled,
       runManualTranscription: config.mcpManualTranscriptionEnabled,
+      readAudio: config.mcpAudioToolsEnabled,
       readImages: config.mcpImageToolsEnabled,
       actor: 'mcp:oauth'
     });

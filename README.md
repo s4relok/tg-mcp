@@ -29,6 +29,7 @@ Telegram digest MCP server that logs into a Telegram user account and works only
   - `get_source_summary`
 - Optional authenticated owner media tools:
   - `transcribe_source_audio`
+  - `get_telegram_audio`
   - `list_source_images`
   - `get_telegram_images`
 - Optional authenticated owner MCP tools:
@@ -109,8 +110,9 @@ The IdP must echo the OAuth `resource` parameter and issue an expiring JWT acces
 
 Available scopes:
 
-- `telegram:read`: enabled-source lists, digests, search, summaries, status, and
-  owner image List/Get when `MCP_IMAGE_TOOLS_ENABLED=true`.
+- `telegram:read`: enabled-source lists, digests, search, summaries, status,
+  original audio delivery when `MCP_AUDIO_TOOLS_ENABLED=true`, and owner image
+  List/Get when `MCP_IMAGE_TOOLS_ENABLED=true`.
 - `telegram:sources:read`: disabled-source catalog and source settings.
 - `telegram:sources:manage`: enable/disable, tags, and settings mutations.
 - `telegram:sync:run`: exact bounded manual sync and manual audio
@@ -127,11 +129,11 @@ https://celticspear.com/.well-known/oauth-protected-resource/tg-mcp/oauth-mcp
 ```
 
 `MCP_SOURCE_MANAGEMENT_ENABLED=true` is required before privileged source
-tools are registered. Manual transcription and image delivery are controlled
-independently by `MCP_MANUAL_TRANSCRIPTION_ENABLED` and
-`MCP_IMAGE_TOOLS_ENABLED`. Keep `APP_AUTH_TOKEN` for admin, REST, CLI setup,
-and the legacy `/mcp` endpoint; OAuth protects only `OAUTH_MCP_PATH`. See the
-implementation and IdP rollout checklist in
+tools are registered. Manual transcription, original audio delivery, and image
+delivery are controlled independently by `MCP_MANUAL_TRANSCRIPTION_ENABLED`,
+`MCP_AUDIO_TOOLS_ENABLED`, and `MCP_IMAGE_TOOLS_ENABLED`. Keep
+`APP_AUTH_TOKEN` for admin, REST, CLI setup, and the legacy `/mcp` endpoint;
+OAuth protects only `OAUTH_MCP_PATH`. See the implementation and IdP rollout checklist in
 [docs/oauth-scopes-plan.md](docs/oauth-scopes-plan.md).
 
 ## Telegram setup
@@ -314,6 +316,7 @@ To expose owner write tools on the bearer-protected MCP endpoint, explicitly ena
 MCP_SOURCE_MANAGEMENT_ENABLED=true
 MCP_MESSAGE_SENDING_ENABLED=true
 MCP_MANUAL_TRANSCRIPTION_ENABLED=true
+MCP_AUDIO_TOOLS_ENABLED=true
 MCP_IMAGE_TOOLS_ENABLED=true
 ```
 
@@ -405,6 +408,67 @@ historical audio is required.
 
 OAuth requires `telegram:read telegram:sync:run`. The command is never
 registered on the no-auth `CHATGPT_MCP_PATH`.
+
+### Original Telegram audio
+
+When `MCP_AUDIO_TOOLS_ENABLED=true`, authenticated owner/OAuth MCP clients can
+request only explicitly selected voice/audio messages:
+
+```text
+get_telegram_audio(
+  sourceId="<exact-enabled-source-id>",
+  messageIds=[75606]
+)
+```
+
+The contract intentionally matches `get_telegram_images`: one exact enabled
+`sourceId` and `1..MCP_AUDIO_GET_MAX_ITEMS` exact positive `messageIds`. There
+is no wildcard, date-range export, semantic audio search, or source-wide
+download. The service verifies the stored message, `media.kind=voice|audio`,
+an audio MIME allowlist, the live Telegram message, and per-file/total limits.
+It also applies the configured `ALLOWED_SOURCE_IDS` ceiling when non-empty.
+
+```text
+MCP_AUDIO_TOOLS_ENABLED=true
+MCP_AUDIO_GET_MAX_ITEMS=3
+MCP_AUDIO_MAX_FILE_BYTES=10485760
+MCP_AUDIO_MAX_TOTAL_BYTES=20971520
+```
+
+Each successful item produces a small text metadata block followed by MCP
+audio content:
+
+```json
+{
+  "type": "audio",
+  "data": "<base64 original bytes>",
+  "mimeType": "audio/ogg"
+}
+```
+
+The bytes are returned unchanged; no transcoding or transcription occurs.
+`structuredContent` includes `sourceId`, `messageId`, `mimeType`, sanitized
+`fileName`, byte size, duration, and per-item status, but deliberately omits
+base64 data. The implementation reuses the transcription pipeline's exact
+Telegram message resolver, bounded downloader, and private
+`AUDIO_TRANSCRIPTION_WORK_DIR`; the temporary file is deleted in `finally` and
+is never placed under a web root or retained as a second cache. Audio bytes and
+transcripts are not logged. The tool requires `telegram:read` on OAuth and is
+never registered on the no-auth `CHATGPT_MCP_PATH`.
+
+After enabling the flag and deploying a committed revision, run the bounded
+smoke test without writing the returned audio to disk or printing MCP content:
+
+```bash
+SOURCE_ID=5509770803 \
+MESSAGE_ID=75606 \
+EXPECTED_SIZE=2578344 \
+ENV_FILE=/srv/tg-mcp/shared/.env \
+node ops/smoke-audio.mjs
+```
+
+The script prints only identifiers, MIME, byte length, and SHA-256; it does not
+print captions, transcripts, or audio data.
 
 ## Telegram images
 
@@ -511,6 +575,7 @@ Expected layout:
   releases/
   shared/
     .env
+    audio-work/
     image-cache/
     logs/
     sessions/

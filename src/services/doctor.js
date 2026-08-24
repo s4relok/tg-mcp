@@ -78,6 +78,7 @@ function createNextSteps(checks, { envFile } = {}) {
   const telegramSources = findCheck(checks, 'telegram_sources');
   const telegramBot = findCheck(checks, 'telegram_bot');
   const openAiTranscription = findCheck(checks, 'openai_transcription');
+  const audioWorkDir = findCheck(checks, 'audio_work_dir');
   const imageCache = findCheck(checks, 'image_cache');
 
   if (mongodb?.status === 'error') {
@@ -161,6 +162,14 @@ function createNextSteps(checks, { envFile } = {}) {
       command: missingSourceFilter
         ? 'Set AUDIO_TRANSCRIPTION_SOURCE_IDS=<source_id>[,<source_id>] or AUDIO_TRANSCRIPTION_SOURCE_TAGS=<tag>[,<tag>], then restart the service.'
         : 'Set OPENAI_API_KEY or set OPENAI_TRANSCRIPTION_ENABLED=false, then restart the service.'
+    });
+  }
+
+  if (audioWorkDir?.status && audioWorkDir.status !== 'ok') {
+    addUniqueStep(steps, {
+      id: 'prepare_audio_work_dir',
+      reason: audioWorkDir.message,
+      command: `Create ${audioWorkDir.details?.directory || 'AUDIO_TRANSCRIPTION_WORK_DIR'}, set ownership to the tg-mcp service user, and chmod 0700.`
     });
   }
 
@@ -312,6 +321,34 @@ async function imageCacheStatus(config) {
   }
 }
 
+async function audioWorkDirStatus(config) {
+  if (!config.mcpAudioToolsEnabled) {
+    return ok('audio_work_dir', 'MCP original audio delivery is disabled.');
+  }
+  const directory = config.audioTranscriptionWorkDir;
+  try {
+    const stat = await fs.stat(directory);
+    if (!stat.isDirectory()) {
+      return error('audio_work_dir', 'AUDIO_TRANSCRIPTION_WORK_DIR exists but is not a directory.', {
+        directory
+      });
+    }
+    await fs.access(directory, fsConstants.R_OK | fsConstants.W_OK);
+    return ok('audio_work_dir', 'Private audio work directory is readable and writable.', {
+      directory
+    });
+  } catch (caught) {
+    if (caught.code === 'ENOENT') {
+      return warn('audio_work_dir', 'MCP original audio delivery is enabled but AUDIO_TRANSCRIPTION_WORK_DIR does not exist.', {
+        directory
+      });
+    }
+    return error('audio_work_dir', `AUDIO_TRANSCRIPTION_WORK_DIR is not usable: ${caught.message}`, {
+      directory
+    });
+  }
+}
+
 export async function createReadinessReport({
   config,
   store,
@@ -359,6 +396,7 @@ export async function createReadinessReport({
 
   checks.push(telegramBotStatus(config));
   checks.push(openAiTranscriptionStatus(config));
+  checks.push(await audioWorkDirStatus(config));
   checks.push(await imageCacheStatus(config));
 
   checks.push(await sessionFileStatus(config.telegramSessionFile));

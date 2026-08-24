@@ -12,7 +12,7 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 
 | Scope | Grants |
 | --- | --- |
-| `telegram:read` | Enabled-source lists, sync status, digests, summaries, search, message context, action items, and owner image List/Get |
+| `telegram:read` | Enabled-source lists, sync status, digests, summaries, search, message context, action items, exact original-audio Get, and owner image List/Get |
 | `telegram:sources:read` | Disabled-source visibility and source settings |
 | `telegram:sources:manage` | Enable/disable sources, edit tags, and update source settings |
 | `telegram:sync:run` | Start an exact, bounded manual source sync or manual audio transcription |
@@ -31,7 +31,7 @@ The existing app-token endpoint and optional anonymous read-only endpoint remain
 - [x] Keep source-management tools behind both `MCP_SOURCE_MANAGEMENT_ENABLED` and the required scopes.
 - [x] Keep Saved Messages sending behind `MCP_MESSAGE_SENDING_ENABLED` and the
   dedicated `telegram:messages:send` scope.
-- [x] Keep manual transcription and image delivery behind independent
+- [x] Keep manual transcription, original audio delivery, and image delivery behind independent
   fail-closed feature flags without adding broader OAuth scopes.
 - [x] Complete unit/integration tests, documentation, and final security review.
 

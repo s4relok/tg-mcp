@@ -149,6 +149,23 @@ export function loadConfig(env = process.env) {
       10,
       { min: 1, max: 100 }
     ),
+    mcpAudioToolsEnabled: readBoolean(env, 'MCP_AUDIO_TOOLS_ENABLED', false),
+    mcpAudioGetMaxItems: readBoundedNumber(env, 'MCP_AUDIO_GET_MAX_ITEMS', 3, {
+      min: 1,
+      max: 10
+    }),
+    mcpAudioMaxFileBytes: readBoundedNumber(
+      env,
+      'MCP_AUDIO_MAX_FILE_BYTES',
+      10 * 1024 * 1024,
+      { min: 1024, max: 25 * 1024 * 1024 }
+    ),
+    mcpAudioMaxTotalBytes: readBoundedNumber(
+      env,
+      'MCP_AUDIO_MAX_TOTAL_BYTES',
+      20 * 1024 * 1024,
+      { min: 1024, max: 50 * 1024 * 1024 }
+    ),
     mcpImageToolsEnabled: readBoolean(env, 'MCP_IMAGE_TOOLS_ENABLED', false),
     mcpImageListMaxLimit: readBoundedNumber(env, 'MCP_IMAGE_LIST_MAX_LIMIT', 100, {
       min: 1,
