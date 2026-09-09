@@ -79,7 +79,10 @@ test('manual backup drains pending media without enabling persistent capture, in
   await f.backup.enable('123');
   await f.backup.pause('123');
   f.config.backupMediaBatchSize = 1;
+  let destroyed = 0;
+  f.client.destroy = async () => { destroyed++; };
   const result = await f.backup.runOnce('123', { pages: 1 });
+  assert.ok(destroyed >= 2);
   assert.equal(result.captureEnabled, false);
   assert.equal(result.media.saved, 3);
   assert.equal(result.history.complete, true);

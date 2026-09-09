@@ -263,7 +263,14 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       throw error;
     } finally {
       clearInterval(heartbeat);
-      try { if (client) await client.disconnect(); }
+      try {
+        // These clients are one-use. disconnect() alone leaves GramJS's update
+        // loop alive and it can reconnect after a completed scheduled job.
+        if (client) {
+          if (typeof client.destroy === 'function') await client.destroy();
+          else await client.disconnect();
+        }
+      }
       finally { await store.releaseBackupLease(id, owner); }
     }
     return status(id);
