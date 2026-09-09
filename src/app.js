@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { registerBackupRoutes } from './backup/httpRoutes.js';
 
 import { metadataHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/metadata.js';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
@@ -98,6 +99,7 @@ export function createApp({
   imageService,
   messageSender,
   syncCoordinator,
+  backupService,
   oauthTokenVerifier,
   telegramAdmin = {},
   audioTranscriptionAdmin = {}
@@ -107,6 +109,7 @@ export function createApp({
     allowedHosts: config.allowedHosts
   });
   const auth = requireAppToken(config);
+  registerBackupRoutes(app, { backup: backupService, auth, enabled: Boolean(config.appAuthToken) });
   const oauthAuth = config.oauthEnabled
     ? createOAuthBearerAuth(config, { verifier: oauthTokenVerifier })
     : null;
@@ -451,6 +454,7 @@ export function createApp({
             imageService: telegramImages,
             messageSender: sendTelegramMessage,
             syncCoordinator: sourceSync,
+            backupService,
             access
           });
           let generatedSessionId = null;
@@ -521,6 +525,7 @@ export function createApp({
     runManualTranscription: hasOwnerToken && config.mcpManualTranscriptionEnabled,
     readAudio: hasOwnerToken && config.mcpAudioToolsEnabled,
     readImages: hasOwnerToken && config.mcpImageToolsEnabled,
+    backups: hasOwnerToken && config.mcpBackupToolsEnabled,
     actor: 'mcp:owner-token'
   });
   if (config.chatGptMcpPath && config.chatGptMcpPath !== config.mcpPath) {
@@ -545,6 +550,7 @@ export function createApp({
       runManualTranscription: config.mcpManualTranscriptionEnabled,
       readAudio: config.mcpAudioToolsEnabled,
       readImages: config.mcpImageToolsEnabled,
+      backups: config.mcpBackupToolsEnabled,
       actor: 'mcp:oauth'
     });
   }

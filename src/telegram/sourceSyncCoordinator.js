@@ -205,6 +205,7 @@ export function createTelegramSyncCoordinator({
             }
           }
           await store.completeSourceSync(source.sourceId, {
+            owner: lockOwner,
             now: now(),
             nextSyncAt,
             error: null
@@ -213,6 +214,7 @@ export function createTelegramSyncCoordinator({
           const message = caught instanceof Error ? caught.message : String(caught);
           errors.push({ sourceId: source.sourceId, title: source.title, error: message });
           await store.completeSourceSync(source.sourceId, {
+            owner: lockOwner,
             now: now(),
             nextSyncAt,
             error: message

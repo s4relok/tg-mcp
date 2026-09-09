@@ -33,5 +33,8 @@
     "openai": "^6.46.0",
     "telegram": "^2.26.22",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^10.4.3"
   }
 }

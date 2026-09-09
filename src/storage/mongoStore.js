@@ -1,4 +1,5 @@
 import { MongoClient } from 'mongodb';
+import { ArchiveStore } from '../backup/archiveStore.js';
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -9,7 +10,7 @@ function isTextIndex(index) {
 }
 
 export class MongoTelegramStore {
-  constructor(db, client) {
+  constructor(db, client, config = {}) {
     this.db = db;
     this.client = client;
     this.sources = db.collection('tg_sources');
@@ -18,6 +19,7 @@ export class MongoTelegramStore {
     this.syncState = db.collection('sync_state');
     this.sourceAudit = db.collection('tg_source_audit');
     this.mediaCache = db.collection('tg_media_cache');
+    this.backupArchive = config.backupDir ? new ArchiveStore(config.backupDir) : null;
   }
 
   async ensureIndexes() {
@@ -273,10 +275,11 @@ export class MongoTelegramStore {
   async completeSourceSync(sourceId, {
     now = new Date(),
     nextSyncAt,
-    error = null
+    error = null,
+    owner
   } = {}) {
     return this.sources.findOneAndUpdate(
-      { sourceId },
+      { sourceId, ...(owner ? { syncLockOwner: owner } : {}) },
       {
         $set: {
           lastSyncCompletedAt: now,
@@ -294,6 +297,9 @@ export class MongoTelegramStore {
   }
 
   async purgeSourceData(sourceId) {
+    if (await this.backupArchive?.selected(sourceId)) {
+      throw new Error('Source is protected by its permanent backup, including while paused');
+    }
     const [messagesResult, digestsResult, cacheResult] = await Promise.all([
       this.messages.deleteMany({ sourceId }),
       this.digests.deleteMany({ sourceIds: sourceId }),
@@ -391,6 +397,27 @@ export class MongoTelegramStore {
     return {
       insertedOrUpdated: result.upsertedCount + result.modifiedCount + result.matchedCount
     };
+  }
+
+  async *iterateBackupMessages(sourceId) {
+    for await (const message of this.messages.find({ sourceId }).sort({ messageId: 1 })) yield message;
+  }
+
+  async getBackupSupplemental(sourceId) {
+    const [digests, audit] = await Promise.all([
+      this.digests.find({ sourceIds: { $size: 1, $all: [sourceId] } }).toArray(),
+      this.sourceAudit.find({ sourceId }).toArray()
+    ]);
+    return [...digests.map((value) => ({ type: 'digest', value })), ...audit.map((value) => ({ type: 'audit', value }))];
+  }
+
+  async renewBackupLease(sourceId, owner, until) {
+    const result = await this.sources.updateOne({ sourceId, syncLockOwner: owner, enabled: true }, { $set: { syncLockUntil: until } });
+    return result.matchedCount === 1;
+  }
+
+  async releaseBackupLease(sourceId, owner) {
+    await this.sources.updateOne({ sourceId, syncLockOwner: owner }, { $unset: { syncLockUntil: '', syncLockOwner: '' } });
   }
 
   async updateMessageReactions(sourceId, messageId, reactions) {
@@ -869,7 +896,7 @@ export async function createMongoStore(config) {
   });
   try {
     await client.connect();
-    const store = new MongoTelegramStore(client.db(config.mongoDb), client);
+    const store = new MongoTelegramStore(client.db(config.mongoDb), client, config);
     await store.ensureIndexes();
     return store;
   } catch (caught) {

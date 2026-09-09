@@ -12,11 +12,13 @@ import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { startTelegramSyncWorker } from './telegram/syncWorker.js';
 import { startTelegramReactionWorker } from './telegram/reactionWorker.js';
 import { startTelegramSlashBot } from './telegram/slashBot.js';
+import { attachBackup, startBackupWorker } from './backup/integration.js';
 
 async function main() {
   const config = loadConfigFromProcessEnv();
   assertSafeRuntimeConfig(config);
   const store = await createMongoStore(config);
+  const backupService = attachBackup({ config, store });
   const digestService = createTelegramDigestService(store);
   const sourceManagementService = createSourceManagementService({ store, config });
   const messageSender = createTelegramMessageSender({ config });
@@ -51,6 +53,7 @@ async function main() {
     imageService,
     messageSender,
     syncCoordinator,
+    backupService,
     audioTranscriptionAdmin: {
       runOnce: audioTranscriptionWorker.runOnce
     }
@@ -62,6 +65,7 @@ async function main() {
   });
   const reactionWorker = startTelegramReactionWorker({ config, store });
   const slashBot = startTelegramSlashBot({ config, digestService });
+  const backupWorker = startBackupWorker({ backup: backupService, config });
 
   const server = app.listen(config.port, config.host, () => {
     console.log(`tg-mcp listening on http://${config.host}:${config.port}${config.mcpPath}`);
@@ -86,6 +90,7 @@ async function main() {
     server.close(async () => {
       clearTimeout(forceCloseTimer);
       await syncWorker.stop();
+      await backupWorker.stop();
       await reactionWorker.stop();
       await audioTranscriptionWorker.stop();
       await imageCacheJanitor.stop();

@@ -98,6 +98,7 @@ export async function processAudioTranscriptionJob({
       workDir: config.audioTranscriptionWorkDir,
       maxFileBytes: config.audioTranscriptionMaxFileBytes
     });
+    await store.backup?.saveDownloaded(job, downloaded.filePath);
     const result = await transcriber.transcribe(downloaded.filePath, {
       durationSec: job.media?.durationSec || null
     });
@@ -108,6 +109,7 @@ export async function processAudioTranscriptionJob({
     await store.completeAudioTranscription({
       sourceId: job.sourceId,
       messageId: job.messageId,
+      media: job.media,
       transcriptText: result.text.trim(),
       model: result.model,
       responseFormat: result.responseFormat,

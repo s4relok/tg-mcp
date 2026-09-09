@@ -126,6 +126,16 @@ export function loadConfig(env = process.env) {
     telegramSyncMaxLimit: readNumber(env, 'TELEGRAM_SYNC_MAX_LIMIT', 1000),
     allowedSourceIds: readList(env, 'ALLOWED_SOURCE_IDS'),
 
+    backupDir: env.BACKUP_DIR || './data/chat-archive',
+    backupReplicaDir: env.BACKUP_REPLICA_DIR || '',
+    backupIntervalSeconds: readBoundedNumber(env, 'BACKUP_INTERVAL_SECONDS', 60, { min: 10, max: 86400 }),
+    backupReplicaIntervalSeconds: readBoundedNumber(env, 'BACKUP_REPLICA_INTERVAL_SECONDS', 86400, { min: 60, max: 604800 }),
+    backupPageSize: readBoundedNumber(env, 'BACKUP_PAGE_SIZE', 100, { min: 1, max: 1000 }),
+    backupMediaBatchSize: readBoundedNumber(env, 'BACKUP_MEDIA_BATCH_SIZE', 20, { min: 1, max: 500 }),
+    backupMaxFileBytes: readBoundedNumber(env, 'BACKUP_MAX_FILE_BYTES', 2 * 1024 ** 3, { min: 1024, max: 4 * 1024 ** 3 }),
+    backupMinFreeBytes: readBoundedNumber(env, 'BACKUP_MIN_FREE_BYTES', 512 * 1024 ** 2, { min: 1024 ** 2, max: 100 * 1024 ** 3 }),
+    mcpBackupToolsEnabled: readBoolean(env, 'MCP_BACKUP_TOOLS_ENABLED', false),
+
     sourceDefaultSyncIntervalSeconds: readNumber(
       env,
       'SOURCE_DEFAULT_SYNC_INTERVAL_SECONDS',

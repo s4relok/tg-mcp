@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
 import { createOAuthChallenge, OAuthScopes } from '../http/oauth.js';
+import { backupMediaResult } from '../backup/httpRoutes.js';
 
 function toolResult(data) {
   return {
@@ -277,6 +278,7 @@ export function createTelegramMcpServer({
   imageService,
   messageSender,
   syncCoordinator,
+  backupService,
   access = {}
 }) {
   const server = new McpServer(
@@ -901,6 +903,38 @@ export function createTelegramMcpServer({
   // MCP SDK 1.29 preserves extension metadata but does not yet emit the
   // top-level securitySchemes field documented by OpenAI. Mirror the same
   // schemes onto the wire while retaining _meta for older clients.
+  if (access.backups && backupService) {
+    const sourceId = z.string().regex(/^-?\d{1,24}$/).describe('One exact protected Telegram chat ID.');
+    const messageId = z.number().int().positive();
+    const registerBackup = (name, description, inputSchema, manage, operation) => {
+      const scopes = [OAuthScopes.read, manage ? OAuthScopes.backupManage : OAuthScopes.backupRead];
+      server.registerTool(name, {
+        description, inputSchema, annotations: { readOnlyHint: !manage, destructiveHint: false, idempotentHint: !manage },
+        ...oauthToolMetadata(access, scopes)
+      }, (args, extra) => runAuthorizedTool({ access, config, extra, scopes, run: async () => {
+        const result = await operation(args);
+        return result?.content ? result : toolResult(result);
+      } }));
+    };
+    registerBackup('get_source_backup_status', 'Read local archive coverage, original files, errors and second-copy status.', { sourceId }, false,
+      (args) => backupService.status(args.sourceId));
+    registerBackup('search_source_backup', 'Search the permanent local backup, including transcripts, without Telegram access.', {
+      sourceId, query: z.string().max(2000).optional(), limit: z.number().int().min(1).max(200).optional(), beforeMessageId: messageId.optional()
+    }, false, (args) => backupService.search(args));
+    registerBackup('get_backup_message_context', 'Read an archived message, nearby messages and observed versions.', { sourceId, messageId }, false,
+      (args) => backupService.context(args));
+    registerBackup('get_backup_media', 'Read an original image/audio from the permanent local archive. No Telegram download.', {
+      sourceId, messageId, version: z.string().regex(/^[a-f0-9]{64}$/).optional()
+    }, false, (args) => backupMediaResult(backupService, args, 25 * 1024 * 1024));
+    registerBackup('enable_source_backup', 'Enable permanent backup for exactly one enabled chat, preserving data locally on the server.', { sourceId }, true,
+      (args) => backupService.enable(args.sourceId));
+    registerBackup('pause_source_backup', 'Pause backup collection. Existing local and replica data remain protected.', { sourceId }, true,
+      (args) => backupService.pause(args.sourceId));
+    registerBackup('run_source_backup', 'Collect bounded pages and original files for the protected chat; subsequent runs resume.', {
+      sourceId, pages: z.number().int().min(1).max(100).optional()
+    }, true, (args) => backupService.run(args.sourceId, { pages: args.pages }));
+  }
+
   if (access.oauth) {
     exposeTopLevelSecuritySchemes(server);
   }

@@ -18,6 +18,8 @@ import {
 } from './telegram/telegramSync.js';
 import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
+import { attachBackup } from './backup/integration.js';
+import { createBackupService } from './backup/backupService.js';
 
 function usage() {
   console.log(`Usage:
@@ -41,6 +43,18 @@ function usage() {
   npm run cli -- transcription-status [--source-id ID] [--env-path PATH]
   npm run cli -- retry-failed-transcriptions [--limit N] [--source-id ID] [--env-path PATH]
   npm run cli -- doctor [--telegram] [--env-path PATH]
+  npm run cli -- backup-source SOURCE_ID [--pages N] [--env-path PATH]
+  npm run cli -- run-source-backup SOURCE_ID [--pages N]
+  npm run cli -- pause-source-backup SOURCE_ID
+  npm run cli -- resume-source-backup SOURCE_ID
+  npm run cli -- backup-status SOURCE_ID
+  npm run cli -- search-source-backup SOURCE_ID [--query TEXT] [--limit N]
+  npm run cli -- backup-message SOURCE_ID --message-id ID
+  npm run cli -- backup-media SOURCE_ID --message-id ID [--version HASH]
+  npm run cli -- verify-source-backup SOURCE_ID
+  npm run cli -- export-source-backup SOURCE_ID [--destination PATH]
+  npm run cli -- restore-source-backup SOURCE_ID --snapshot PATH --target NEW_PATH
+  npm run cli -- transcribe-backup-audio SOURCE_ID [--limit N]
 `);
 }
 
@@ -78,7 +92,12 @@ function parseArgs(argv) {
 
   for (let index = 3; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--limit') {
+    if (['--snapshot', '--target', '--destination', '--query', '--version', '--message-id', '--pages'].includes(arg)) {
+      if (!argv[index + 1]) throw new Error(`${arg} requires a value`);
+      const key = arg === '--message-id' ? 'messageId' : arg.slice(2);
+      options[key] = ['messageId', 'pages'].includes(key) ? Number(argv[index + 1]) : argv[index + 1];
+      index += 1;
+    } else if (arg === '--limit') {
       if (!argv[index + 1]) {
         throw new Error('--limit requires a value');
       }
@@ -234,6 +253,30 @@ async function main() {
     required: Boolean(options.envFile)
   });
 
+  const offlineBackupCommands = new Set(['backup-status', 'pause-source-backup', 'search-source-backup',
+    'backup-message', 'backup-media', 'verify-source-backup', 'export-source-backup',
+    'restore-source-backup', 'transcribe-backup-audio']);
+  if (offlineBackupCommands.has(command)) {
+    if (options.positional.length !== 1) throw new Error(`${command} requires exactly one SOURCE_ID`);
+    const sourceId = options.positional[0];
+    const backup = createBackupService({ config });
+    let result;
+    if (command === 'backup-status') result = await backup.status(sourceId);
+    if (command === 'pause-source-backup') result = await backup.pause(sourceId);
+    if (command === 'search-source-backup') result = await backup.search({ sourceId, query: options.query, limit: options.limit });
+    if (command === 'backup-message') result = await backup.context({ sourceId, messageId: options.messageId });
+    if (command === 'backup-media') result = await backup.mediaFile({ sourceId, messageId: options.messageId, version: options.version });
+    if (command === 'verify-source-backup') result = await backup.verify(sourceId);
+    if (command === 'export-source-backup') result = await backup.replicate(sourceId, options.destination);
+    if (command === 'transcribe-backup-audio') result = await backup.transcribe({ sourceId, limit: options.limit });
+    if (command === 'restore-source-backup') {
+      if (!options.snapshot || !options.target) throw new Error('Restore requires --snapshot and --target');
+      result = await backup.restore(sourceId, options.snapshot, options.target);
+    }
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
   if (command === 'login') {
     const result = await withTelegram(config, (client) => createTelegramLoginReport({
       client,
@@ -276,6 +319,15 @@ async function main() {
   }
 
   try {
+    const backup = command === 'doctor' ? null : attachBackup({ config, store });
+    if (['backup-source', 'resume-source-backup', 'run-source-backup'].includes(command)) {
+      if (options.positional.length !== 1) throw new Error(`${command} requires exactly one SOURCE_ID`);
+      const sourceId = options.positional[0];
+      if (command !== 'run-source-backup') await backup.enable(sourceId);
+      const result = await backup.run(sourceId, { pages: options.pages });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     if (command === 'doctor') {
       const report = await createReadinessReport({
         config,

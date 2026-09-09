@@ -1,3 +1,5 @@
+import { backupOpenApiPaths } from '../backup/httpRoutes.js';
+
 function parameter(name, description, schema = { type: 'string' }) {
   return {
     name,
@@ -59,6 +61,7 @@ export function createOpenApiDocument(config) {
     },
     security: config.appAuthToken ? [{ bearerAuth: [] }] : [],
     paths: {
+      ...backupOpenApiPaths(config),
       [`${api}/sources`]: {
         get: {
           operationId: 'listSources',

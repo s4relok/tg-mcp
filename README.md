@@ -534,6 +534,133 @@ Both image tools require `telegram:read`, exact enabled sources, and the
 `ALLOWED_SOURCE_IDS` ceiling when configured. They are never registered on the
 no-auth `CHATGPT_MCP_PATH`.
 
+## Permanent chat backups
+
+An owner can explicitly protect individual chats. Each enable operation accepts
+one exact `sourceId`; repeat it for a second chat. No global selection or tag
+expansion occurs. Every protected chat keeps its own permanent archive **on this
+server**. An optional second copy supplements the local archive.
+
+```text
+BACKUP_DIR=/srv/tg-mcp/shared/chat-archive
+BACKUP_REPLICA_DIR=
+BACKUP_INTERVAL_SECONDS=60
+BACKUP_REPLICA_INTERVAL_SECONDS=86400
+BACKUP_PAGE_SIZE=100
+BACKUP_MEDIA_BATCH_SIZE=20
+BACKUP_MAX_FILE_BYTES=2147483648
+BACKUP_MIN_FREE_BYTES=536870912
+MCP_BACKUP_TOOLS_ENABLED=true
+```
+
+`BACKUP_DIR` must be outside release checkouts, image cache, audio work directories
+and the web root. It has no automatic retention or purge. Do not change this path
+without moving the complete archive while the service is stopped. Metadata and
+SHA-256 addressed blobs are authoritative local files; Mongo remains the mutable
+operational index. Archive search rebuilds an in-memory projection from the
+versioned journal and works without Mongo or Telegram. This first implementation
+keeps that projection in memory; size the server for the selected chat histories.
+
+```bash
+npm run cli -- backup-source <sourceId> --pages 5
+npm run cli -- backup-status <sourceId>
+npm run cli -- run-source-backup <sourceId> --pages 5
+npm run cli -- pause-source-backup <sourceId>
+npm run cli -- resume-source-backup <sourceId>
+npm run cli -- search-source-backup <sourceId> --query "meeting"
+npm run cli -- backup-message <sourceId> --message-id 123
+npm run cli -- backup-media <sourceId> --message-id 123
+npm run cli -- verify-source-backup <sourceId>
+```
+
+The first enable preserves the existing index, transcripts and available image
+cache bytes, then starts a bounded collection pass. The server resumes collection
+every minute, including all accessible history regardless of normal index depth,
+reply, forward or media filters. Cursors commit after records and media jobs;
+large incremental backlogs are paged without jumping over messages. Voice/audio,
+the largest Telegram photo, and document bytes are saved without transcoding.
+Legacy cache bytes are retained with `original=false` because old cache metadata
+does not prove file version or maximum photo quality. Oversized originals remain
+`blocked_by_limit`; they are never replaced with a smaller photo silently.
+
+Observed edits retain previous versions, including A → B → A. Channel deletion
+updates add markers without deleting content. Private/group deletion updates
+without a peer are not attributed by guessing; missing messages remain readable.
+A connected update listener plus periodic full-history reconciliation captures
+changes. No mechanism can recover unseen messages or originals already deleted
+before they were saved. Unknown attachment kinds and unavailable originals remain
+visible gaps. History completion, media completion and replica verification are
+separate status fields.
+
+Disabling the operational source pauses network collection; owner archive reading
+still works. `pause-source-backup` stops collection and preserves the archive.
+`purge-source-data` rejects protected sources even while paused. Existing source
+allowlists still apply; removing access never deletes archived files. Archiving
+does not automatically purchase transcription for the entire history:
+
+```bash
+npm run cli -- transcribe-backup-audio <sourceId> --limit 1
+```
+
+That explicit bounded command transcribes saved audio without Telegram. Existing
+normal transcription jobs also preserve their downloaded originals and append
+their results to the protected archive. Failed OpenAI requests do not remove the
+archived original.
+
+Owner admin routes live at `/admin/backups/<sourceId>`: GET status, POST
+`/enable`, `/pause`, `/run`, `/verify`, `/replicate`, `/transcribe`; GET `/search`,
+`/messages/<messageId>`, `/messages/<messageId>/media`. HTTP replication uses only
+the configured destination; arbitrary filesystem destinations and restore are CLI
+only. Admin routes require `APP_AUTH_TOKEN`, including in development.
+
+With `MCP_BACKUP_TOOLS_ENABLED=true`, owner/OAuth MCP adds
+`get_source_backup_status`, `search_source_backup`, `get_backup_message_context`,
+`get_backup_media`, `enable_source_backup`, `pause_source_backup`,
+`run_source_backup`. OAuth requires `telegram:read` and `telegram:backup:read` or
+`telegram:backup:manage` for the corresponding operation; scopes are rechecked
+per request. No archive tools are exposed on the no-auth MCP path. MCP media
+delivery is bounded to 25 MiB per call; larger files use the owner admin download
+or CLI. Only supported image/audio MIME types are embedded in MCP content.
+
+For a second copy, configure `BACKUP_REPLICA_DIR` as a separately mounted external
+filesystem (another server or NAS), or provide a destination explicitly:
+
+```bash
+npm run cli -- export-source-backup <sourceId> --destination /mnt/backups/tg-mcp
+npm run cli -- restore-source-backup <sourceId> --snapshot /mnt/backups/tg-mcp/<snapshot> --target /srv/tg-mcp/restored-archive
+BACKUP_DIR=/srv/tg-mcp/restored-archive npm run cli -- search-source-backup <sourceId> --query "meeting"
+```
+
+Exports are self-contained full snapshots for one chat: selection, committed
+journal prefix, blobs and a checksummed manifest. Prior snapshots and the local
+archive are retained. Each snapshot duplicates its file data; plan destination
+capacity accordingly. A `.partial` directory is never a verified snapshot.
+Restore verifies all hashes, refuses an existing target and starts with capture
+paused. It does not overwrite the live Mongo database or send anything to Telegram.
+No storage provider or remote mount is provisioned automatically. A second local
+directory on the same server is not protection against loss of that server.
+Object Lock / WORM policies must be configured at the external storage layer;
+the application does not claim administrator-proof immutability.
+
+Archive status includes free space, media failures and the last verified replica.
+Downloads and journal appends reserve at least `BACKUP_MIN_FREE_BYTES` (512 MiB by
+default); lack of space stops collection instead of deleting previous records.
+Collection/replication errors are logged and do not delete old copies. Replica
+errors leave local capture active. For checksum checks use `verify-source-backup`;
+periodically exercise restore into a new empty target. A dead writer PID is
+recovered automatically. If a process dies before creating its lock owner file
+or during lock recovery, inspect `.writer-lock` / `.lock-recovery` only after
+stopping every server/CLI writer; do not remove a live writer's lock.
+
+Tests include actual file restore after local archive loss, corrupted blobs,
+isolated sources, versions, pagination and HTTP/MCP/OAuth access. The optional real
+Mongo integration test drops only its isolated temporary database and restores
+archive search from the replica:
+
+```bash
+RUN_MONGO_BACKUP_TESTS=1 node --test test/backupMongo.test.js
+```
+
 ## Digest cache
 
 Daily, period, and source summaries are cached in `tg_digests`. The cache key includes the period, timezone, source filters, timeline options, and selected source sync state, so a later Telegram sync naturally invalidates stale summaries.

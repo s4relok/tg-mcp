@@ -131,8 +131,8 @@ export class MemoryTelegramStore {
     return source;
   }
 
-  async completeSourceSync(sourceId, { now = new Date(), nextSyncAt, error = null } = {}) {
-    const source = this.sources.find((item) => item.sourceId === sourceId);
+  async completeSourceSync(sourceId, { now = new Date(), nextSyncAt, error = null, owner } = {}) {
+    const source = this.sources.find((item) => item.sourceId === sourceId && (!owner || item.syncLockOwner === owner));
     if (!source) {
       return null;
     }
@@ -145,6 +145,9 @@ export class MemoryTelegramStore {
   }
 
   async purgeSourceData(sourceId) {
+    if (await this.backupArchive?.selected(sourceId)) {
+      throw new Error('Source is protected by its permanent backup, including while paused');
+    }
     const before = this.messages.length;
     this.messages = this.messages.filter((message) => message.sourceId !== sourceId);
     const source = this.sources.find((item) => item.sourceId === sourceId) || null;
@@ -201,6 +204,29 @@ export class MemoryTelegramStore {
     }
 
     return { insertedOrUpdated: messages.length };
+  }
+
+  async *iterateBackupMessages(sourceId) {
+    for (const message of this.messages.filter((item) => item.sourceId === sourceId)) yield { ...message };
+  }
+
+  async getBackupSupplemental(sourceId) {
+    return [
+      ...this.savedDigests.filter((d) => d.sourceIds?.length === 1 && d.sourceIds[0] === sourceId).map((value) => ({ type: 'digest', value })),
+      ...this.sourceAudit.filter((a) => a.sourceId === sourceId).map((value) => ({ type: 'audit', value }))
+    ];
+  }
+
+  async renewBackupLease(sourceId, owner, until) {
+    const source = this.sources.find((s) => s.sourceId === sourceId && s.syncLockOwner === owner && s.enabled);
+    if (!source) return false;
+    source.syncLockUntil = until;
+    return true;
+  }
+
+  async releaseBackupLease(sourceId, owner) {
+    const source = this.sources.find((s) => s.sourceId === sourceId && s.syncLockOwner === owner);
+    if (source) { delete source.syncLockUntil; delete source.syncLockOwner; }
   }
 
   async updateMessageReactions(sourceId, messageId, reactions) {

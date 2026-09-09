@@ -7,6 +7,8 @@ export const OAuthScopes = Object.freeze({
   sourcesRead: 'telegram:sources:read',
   sourcesManage: 'telegram:sources:manage',
   syncRun: 'telegram:sync:run',
+  backupRead: 'telegram:backup:read',
+  backupManage: 'telegram:backup:manage',
   messagesSend: 'telegram:messages:send'
 });
 
@@ -39,6 +41,7 @@ function parseTokenScopes(payload) {
 
 export function getSupportedOAuthScopes(config) {
   const scopes = [OAuthScopes.read];
+  if (config.mcpBackupToolsEnabled) scopes.push(OAuthScopes.backupRead, OAuthScopes.backupManage);
   if (config.mcpSourceManagementEnabled) {
     scopes.push(
       OAuthScopes.sourcesRead,
