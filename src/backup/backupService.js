@@ -26,6 +26,8 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
   createTranscriber = createOpenAiAudioTranscriber, logger = console }) {
   let running = null;
   let stopping = false;
+  let manualSource = null;
+  const capturing = (id, state) => manualSource === id || state.latest.get('control:capture')?.payload.enabled;
 
   function checkId(sourceId) {
     const id = exactSourceId(sourceId);
@@ -49,7 +51,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
 
   async function captureIndexedSource(selected, messages) {
     const state = await archive.view(selected.sourceId);
-    if (!state.latest.get('control:capture')?.payload.enabled) return;
+    if (!capturing(selected.sourceId, state)) return;
     const entries = [];
     for (const message of messages.filter((item) => String(item.sourceId) === selected.sourceId)) {
       checkId(message.sourceId);
@@ -167,7 +169,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
     for (const job of jobs) {
       if (stopping) return;
       const current = await archive.view(sourceId);
-      if (!current.latest.get('control:capture')?.payload.enabled) return;
+      if (!capturing(sourceId, current)) return;
       await activeSource(sourceId);
       const payload = { ...job.payload, attempts: (job.payload.attempts || 0) + 1 };
       try {
@@ -196,7 +198,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
     const source = await activeSource(id);
     pages = integer(pages, 5, 100);
     const state = await archive.view(id);
-    if (!state.latest.get('control:capture')?.payload.enabled) return { status: 'paused', sourceId: id };
+    if (!capturing(id, state)) return { status: 'paused', sourceId: id };
     const owner = `backup:${randomUUID()}`;
     const claimed = await store.claimSourceSync(id, { now: new Date(), lockUntil: new Date(Date.now() + 120000), owner });
     if (!claimed) return { status: 'busy', sourceId: id };
@@ -224,7 +226,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       for (let page = 0; page < pages; page++) {
         if (stopping) break;
         assertLease();
-        if (!(await archive.view(id)).latest.get('control:capture')?.payload.enabled) break;
+        if (!capturing(id, await archive.view(id))) break;
         await activeSource(id);
         const messages = [];
         for await (const message of client.iterMessages(entity, { minId: cursor.latest, reverse: true, limit: pageSize })) messages.push(message);
@@ -238,7 +240,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       for (let page = 0; page < pages; page++) {
         if (stopping) break;
         assertLease();
-        if (!(await archive.view(id)).latest.get('control:capture')?.payload.enabled) break;
+        if (!capturing(id, await archive.view(id))) break;
         await activeSource(id);
         const before = cursor.complete ? cursor.reconcileBefore : cursor.before;
         const messages = [];
@@ -271,6 +273,29 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
     if (stopping) return { status: 'stopping', sourceId: checkId(sourceId) };
     if (running) return { status: 'busy', sourceId: checkId(sourceId) };
     running = collect(sourceId, options);
+    try { return await running; } finally { running = null; }
+  }
+
+  async function runOnce(sourceId, options = {}) {
+    const id = checkId(sourceId);
+    if (stopping || running) throw new Error('Backup service is stopping or busy');
+    // This permission exists only in this process. Persistent capture stays paused,
+    // including if the manual process crashes or loses its SSH connection.
+    const operation = async () => {
+      manualSource = id;
+      try {
+        let previousLatest;
+        for (let pass = 0; pass < 100; pass++) {
+          if (stopping) throw new Error('Manual backup interrupted');
+          const result = await collect(id, { pages: options.pages ?? 100 });
+          if (result.status === 'busy') throw new Error('Source is busy; retry the manual backup later');
+          if (result.history.complete && !result.media.pending && previousLatest === result.history.latest) return result;
+          previousLatest = result.history.latest;
+        }
+        throw new Error('Manual backup pass limit reached; progress is saved, run again to continue');
+      } finally { manualSource = null; }
+    };
+    running = operation();
     try { return await running; } finally { running = null; }
   }
 
@@ -452,7 +477,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
     } finally { await fs.rm(copy, { force: true }); }
   }
 
-  return { archive, enable, pause, run, status, search, context, mediaFile, verify, replicate, transcribe,
+  return { archive, enable, pause, run, runOnce, status, search, context, mediaFile, verify, replicate, transcribe,
     captureIndexed, saveDownloaded, handleUpdate, restore: restoreSnapshot, selected: () => archive.selections(),
     requestStop: () => { stopping = true; }, wait: () => running || Promise.resolve(), logger };
 }

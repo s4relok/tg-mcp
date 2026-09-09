@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory=$true)][string[]]$SourceIds,
-  [string]$DestinationRoot = 'F:\Backups\tg-mcp',
+  [string]$DestinationRoot = 'E:\backups\tg-mcp',
   [ValidatePattern('^[a-zA-Z0-9@.-]+$')][string]$RemoteHost = 's4relok@celticspear.com',
   [string]$TaskName = 'tg-mcp chat backups'
 )
@@ -15,11 +15,10 @@ if (-not $configuration.StartsWith($destination.TrimEnd('\') + '\', [StringCompa
 [IO.File]::WriteAllText($configuration, (@{ sourceIds = $SourceIds; destination = $destination; remoteHost = $RemoteHost } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 $script = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'pull-backups.ps1'))
 $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$script`" -ConfigPath `"$configuration`""
+$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$script`" -ConfigPath `"$configuration`" -RefreshServer"
 $action = New-ScheduledTaskAction -Execute $powershell -Argument $arguments
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
-$triggers = @((New-ScheduledTaskTrigger -Daily -At '03:30'), (New-ScheduledTaskTrigger -AtLogOn -User $identity))
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 4)
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Description 'Pull and verify permanent chat archives from tg-mcp. Retain server originals and PC snapshots.' -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -Settings $settings -Description 'Manual only: refresh server archives once, pull verified copies, and rebuild the offline viewer. No scheduled triggers.' -Force | Out-Null
 Get-ScheduledTask -TaskName $TaskName | Select-Object TaskName,State

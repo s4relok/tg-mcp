@@ -645,7 +645,7 @@ the application does not claim administrator-proof immutability.
 ### Copy to this Windows computer
 
 After each successful Windows pull, an offline viewer is generated at
-`F:\Backups\tg-mcp\Просмотр\index.html`. Open it directly in a browser by
+`E:\backups\tg-mcp\Просмотр\index.html`. Open it directly in a browser by
 double-clicking the file. It includes chat selection, text/transcript search,
 image previews, audio/video controls, and download links. It uses no network or
 local web server. Files in `Просмотр\media` have normal extensions and are
@@ -654,10 +654,10 @@ The viewer uses each selected chat's latest complete, verified snapshot.
 Rebuild it without downloading from Telegram or the server:
 
 ```powershell
-node ops/build-backup-viewer.mjs 'F:\Backups\tg-mcp' <sourceId1> <sourceId2>
+node ops/build-backup-viewer.mjs 'E:\backups\tg-mcp' <sourceId1> <sourceId2>
 ```
 
-The SSH pull workflow keeps permanent snapshots under `F:\Backups\tg-mcp` (NTFS).
+The SSH pull workflow keeps permanent snapshots under `E:\backups\tg-mcp` (NTFS).
 It transfers only missing SHA-256 objects, reuses local objects through hard links
 across snapshots, and verifies the entire journal/files before marking the copy
 successful. Each snapshot has the same self-contained layout accepted by restore.
@@ -667,13 +667,17 @@ and staging files are cleaned up. Interrupted `.downloads`/`.incoming`/`.partial
 directories are not complete backups and are retained for inspection.
 
 ```powershell
-.\ops\pull-backups.ps1 -SourceIds @('<sourceId1>', '<sourceId2>') -DestinationRoot 'F:\Backups\tg-mcp'
-.\ops\install-backup-task.ps1 -SourceIds @('<sourceId1>', '<sourceId2>') -DestinationRoot 'F:\Backups\tg-mcp'
+.\ops\pull-backups.ps1 -RefreshServer -SourceIds @('<sourceId1>', '<sourceId2>') -DestinationRoot 'E:\backups\tg-mcp'
+.\ops\install-backup-task.ps1 -SourceIds @('<sourceId1>', '<sourceId2>') -DestinationRoot 'E:\backups\tg-mcp'
+Start-ScheduledTask -TaskName 'tg-mcp chat backups'
 ```
 
-The optional Windows task runs daily at 03:30 and at user logon, using the current
-user's existing SSH key, strict host-key checking and non-interactive mode. Missed
-runs start when available; the PC must be on and the user logged in. Concurrent
+The Windows task is manual only, with no daily or logon triggers. Each launch
+refreshes the selected server archives once, copies them to the PC, and rebuilds
+the viewer. Paused automatic capture remains paused even if the manual command
+fails. Use `backup-source-once SOURCE_ID` for a manual server-only refresh.
+The task uses the current user's SSH key, strict host-key checking and
+non-interactive mode; the PC must be on and the user logged in. Concurrent
 pulls are excluded. Configuration is in `pull-config.json` and execution output
 in `pull.log` under the destination. Node.js, Windows `tar`, `ssh` and `scp` must
 be installed. A 512 MiB reserve and temporary transfer space are checked on the PC.

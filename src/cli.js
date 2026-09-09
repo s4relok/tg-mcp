@@ -45,6 +45,7 @@ function usage() {
   npm run cli -- doctor [--telegram] [--env-path PATH]
   npm run cli -- backup-source SOURCE_ID [--pages N] [--env-path PATH]
   npm run cli -- run-source-backup SOURCE_ID [--pages N]
+  npm run cli -- backup-source-once SOURCE_ID [--pages N]
   npm run cli -- pause-source-backup SOURCE_ID
   npm run cli -- resume-source-backup SOURCE_ID
   npm run cli -- backup-status SOURCE_ID
@@ -320,6 +321,11 @@ async function main() {
 
   try {
     const backup = command === 'doctor' ? null : attachBackup({ config, store });
+    if (command === 'backup-source-once') {
+      if (options.positional.length !== 1) throw new Error('backup-source-once requires exactly one SOURCE_ID');
+      console.log(JSON.stringify(await backup.runOnce(options.positional[0], { pages: options.pages }), null, 2));
+      return;
+    }
     if (['backup-source', 'resume-source-backup', 'run-source-backup'].includes(command)) {
       if (options.positional.length !== 1) throw new Error(`${command} requires exactly one SOURCE_ID`);
       const sourceId = options.positional[0];

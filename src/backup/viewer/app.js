@@ -89,7 +89,7 @@
     $('title').textContent = chat.title;
     const attachments = chat.messages.flatMap((m) => m.attachments);
     $('summary').textContent = `${format.format(chat.messages.length)} сообщений · ${format.format(attachments.filter((a) => a.url).length)} сохранённых вложений · ${format.format(attachments.filter((a) => !a.url).length)} недоступных`;
-    $('snapshot').textContent = `Снимок от ${date(chat.snapshotAt)}. Обновляется вместе с резервной копией.`;
+    $('snapshot').textContent = `Снимок от ${date(chat.snapshotAt)}. Обновляется при создании новой резервной копии.`;
     [...$('chats').children].forEach((button) => setPressed(button, button.dataset.source === chat.sourceId));
     $('filters').replaceChildren();
     types.forEach(([type, label]) => {

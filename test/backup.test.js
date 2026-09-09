@@ -73,6 +73,22 @@ test('chat-photo service messages archive their original photo directly', async 
   assert.equal(blob.sha256, hash(bytes));
 });
 
+test('manual backup drains pending media without enabling persistent capture, including on failure', async (t) => {
+  const f = await fixture(t, { remote: [voice(1), voice(2), voice(3)] });
+  await f.backup.enable('123');
+  await f.backup.pause('123');
+  f.config.backupMediaBatchSize = 1;
+  const result = await f.backup.runOnce('123', { pages: 1 });
+  assert.equal(result.captureEnabled, false);
+  assert.equal(result.media.saved, 3);
+  assert.equal(result.history.complete, true);
+  f.offline();
+  await assert.rejects(f.backup.runOnce('123'), /offline/);
+  assert.equal((await f.backup.status('123')).captureEnabled, false);
+  await f.backup.captureIndexed([{ sourceId: '123', messageId: 999, text: 'must stay outside paused archive' }]);
+  assert.equal((await f.backup.search({ sourceId: '123', query: 'must stay' })).messages.length, 0);
+});
+
 test('backup is exact opt-in, protects purge even when paused, and leaves a second chat alone', async (t) => {
   const { backup, store } = await fixture(t, { indexed: [
     { sourceId: '123', messageId: 1, date: new Date(), text: 'selected' },
