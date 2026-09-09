@@ -109,7 +109,7 @@ export class ArchiveStore {
         try {
           await fs.mkdir(lock);
           acquired = true;
-          await fs.writeFile(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid }), { mode: 0o600 });
+          await immutableWrite(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid }));
           break;
         } catch (error) {
           if (error.code !== 'EEXIST') throw error;

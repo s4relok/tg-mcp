@@ -1,5 +1,6 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { downloadTelegramFile } from '../telegram/mediaDownload.js';
 
 const MIME_EXTENSIONS = new Map([
   ['audio/aac', '.aac'],
@@ -133,41 +134,8 @@ export async function downloadTelegramAudioMessage({
   await fsp.mkdir(workDir, { recursive: true });
   const filePath = path.join(workDir, fileName);
 
-  const progressCallback = maxFileBytes
-    ? async (downloadedBytes) => {
-        const downloadedSize = Number(downloadedBytes?.toString?.() ?? downloadedBytes);
-        if (Number.isFinite(downloadedSize) && downloadedSize > maxFileBytes) {
-          throw new Error(`Audio exceeds the ${maxFileBytes} byte limit`);
-        }
-      }
-    : undefined;
-
   try {
-    const downloadParams = {
-      outputFile: filePath,
-      ...(progressCallback ? { progressCallback } : {})
-    };
-    const downloaded = typeof message.downloadMedia === 'function'
-      ? await message.downloadMedia(downloadParams)
-      : await client.downloadMedia(message, downloadParams);
-    if (typeof downloaded === 'string' && path.resolve(downloaded) !== path.resolve(filePath)) {
-      throw new Error('Telegram media download returned an unexpected file path');
-    }
-    if (Buffer.isBuffer(downloaded)) {
-      await fsp.writeFile(filePath, downloaded);
-    }
-    const stat = await fsp.stat(filePath);
-    if (stat.size === 0) {
-      throw new Error(`Telegram media download produced an empty file: ${job.sourceId}/${job.messageId}`);
-    }
-    if (maxFileBytes && stat.size > maxFileBytes) {
-      throw new Error(`Audio exceeds the ${maxFileBytes} byte limit`);
-    }
-
-    return {
-      filePath,
-      size: stat.size
-    };
+    return await downloadTelegramFile({ client, message, filePath, maxFileBytes });
   } catch (error) {
     await fsp.rm(filePath, { force: true }).catch(() => {});
     throw error;

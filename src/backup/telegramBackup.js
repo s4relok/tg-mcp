@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { normalizeTelegramMessage, normalizeTelegramMedia } from '../telegram/telegramSync.js';
 import { canonical, hash } from './archiveStore.js';
+import { downloadTelegramFile } from '../telegram/mediaDownload.js';
 
 export function archiveMedia(message) {
   const supported = normalizeTelegramMedia(message);
@@ -63,18 +64,9 @@ export async function downloadArchiveMedia({ client, message, media, archive, so
   await fs.mkdir(work, { recursive: true, mode: 0o700 });
   const file = path.join(work, `${randomUUID()}.partial`);
   try {
-    const progressCallback = async (bytes) => {
-      if (Number(bytes) > maxFileBytes) throw Object.assign(new Error('Archive download exceeds file limit'), { code: 'blocked_by_limit' });
-    };
-    const result = await client.downloadMedia(message, {
-      outputFile: file, progressCallback,
-      ...(media.kind === 'photo' ? { thumb: media.variant } : {})
-    });
-    if (Buffer.isBuffer(result) || result instanceof Uint8Array) await fs.writeFile(file, result, { mode: 0o600 });
-    if (typeof result === 'string' && path.resolve(result) !== file) throw new Error('Unexpected archive download path');
-    const size = (await fs.stat(file)).size;
-    if (size > maxFileBytes) throw Object.assign(new Error('Archive download exceeds file limit'), { code: 'blocked_by_limit' });
-    if (media.size && size !== media.size) throw new Error('Incomplete archive download');
+    const { size } = await downloadTelegramFile({ client, message, filePath: file, maxFileBytes,
+      thumb: media.kind === 'photo' ? media.variant : undefined });
+    if (media.size && size !== media.size) throw new Error(`Incomplete archive download: expected ${media.size}, received ${size}`);
     return await archive.saveBlob(sourceId, file);
   } finally { await fs.rm(file, { force: true }); }
 }

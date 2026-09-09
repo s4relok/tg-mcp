@@ -40,7 +40,7 @@ async function fixture(t, options = {}) {
         .sort((a, b) => args.reverse ? a.id - b.id : b.id - a.id).slice(0, args.limit);
       for (const message of messages) yield message;
     },
-    async downloadMedia(message, args) { await fs.writeFile(args.outputFile, message.bytes || Buffer.from('original')); return args.outputFile; },
+    async downloadMedia(message, args) { await args.outputFile.write(message.bytes || Buffer.from('original')); },
     async disconnect() {}
   };
   const backup = attachBackup({ config, store, createClient: async () => client,
