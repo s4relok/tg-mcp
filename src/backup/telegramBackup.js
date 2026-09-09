@@ -64,7 +64,11 @@ export async function downloadArchiveMedia({ client, message, media, archive, so
   await fs.mkdir(work, { recursive: true, mode: 0o700 });
   const file = path.join(work, `${randomUUID()}.partial`);
   try {
-    const { size } = await downloadTelegramFile({ client, message, filePath: file, maxFileBytes,
+    // GramJS does not extract photos from MessageService (chat-photo changes).
+    // Download that photo directly; retain regular messages for file-reference refresh.
+    const downloadTarget = message.className === 'MessageService' && media.kind === 'photo'
+      ? message.photo || message.action?.photo : message;
+    const { size } = await downloadTelegramFile({ client, message: downloadTarget, filePath: file, maxFileBytes,
       thumb: media.kind === 'photo' ? media.variant : undefined });
     if (media.size && size !== media.size) throw new Error(`Incomplete archive download: expected ${media.size}, received ${size}`);
     return await archive.saveBlob(sourceId, file);

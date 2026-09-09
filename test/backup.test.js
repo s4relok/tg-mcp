@@ -54,6 +54,25 @@ const voice = (id, bytes = Buffer.from('original audio')) => {
   return { ...textMessage(id, ''), voice: document, document, bytes };
 };
 
+test('chat-photo service messages archive their original photo directly', async (t) => {
+  const { backup, client } = await fixture(t);
+  const bytes = Buffer.from('original chat photo');
+  const photo = { id: '321', sizes: [{ type: 'c', w: 640, h: 640, size: bytes.length }] };
+  const message = { ...textMessage(1), className: 'MessageService', photo, action: { photo },
+    async downloadMedia() { throw new Error('Service-message downloader cannot extract photo'); } };
+  const archive = backup.archive;
+  client.downloadMedia = async (target, args) => {
+    assert.equal(target, photo);
+    assert.equal(args.thumb, 'c');
+    await args.outputFile.write(bytes);
+  };
+  await backup.enable('123');
+  const blob = await downloadArchiveMedia({ client, message, media: archiveMedia(message), archive,
+    sourceId: '123', maxFileBytes: 1000000 });
+  assert.equal(blob.size, bytes.length);
+  assert.equal(blob.sha256, hash(bytes));
+});
+
 test('backup is exact opt-in, protects purge even when paused, and leaves a second chat alone', async (t) => {
   const { backup, store } = await fixture(t, { indexed: [
     { sourceId: '123', messageId: 1, date: new Date(), text: 'selected' },
