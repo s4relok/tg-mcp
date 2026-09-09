@@ -69,6 +69,8 @@ try {
     $work = Assert-LocalPath $work
     Remove-Item -LiteralPath $work -Recurse -Force
   }
+  & $node (Join-Path $projectRoot 'ops/build-backup-viewer.mjs') $destination @SourceIds
+  Assert-Success 'Building offline chat viewer'
 } finally {
   if ($acquired) { $mutex.ReleaseMutex() }
   $mutex.Dispose()

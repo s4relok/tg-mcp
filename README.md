@@ -644,6 +644,19 @@ the application does not claim administrator-proof immutability.
 
 ### Copy to this Windows computer
 
+After each successful Windows pull, an offline viewer is generated at
+`F:\Backups\tg-mcp\Просмотр\index.html`. Open it directly in a browser by
+double-clicking the file. It includes chat selection, text/transcript search,
+image previews, audio/video controls, and download links. It uses no network or
+local web server. Files in `Просмотр\media` have normal extensions and are
+independent copies, so editing them does not alter the immutable snapshots.
+The viewer uses each selected chat's latest complete, verified snapshot.
+Rebuild it without downloading from Telegram or the server:
+
+```powershell
+node ops/build-backup-viewer.mjs 'F:\Backups\tg-mcp' <sourceId1> <sourceId2>
+```
+
 The SSH pull workflow keeps permanent snapshots under `F:\Backups\tg-mcp` (NTFS).
 It transfers only missing SHA-256 objects, reuses local objects through hard links
 across snapshots, and verifies the entire journal/files before marking the copy

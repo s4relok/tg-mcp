@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' file:; img-src 'self' file:; media-src 'self' file:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Архив чатов</title>
+  <link rel="stylesheet" href="style.css">
+  <script id="archive-data" type="application/json"><!--ARCHIVE_DATA--></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <aside>
+    <div class="brand"><span class="brand-icon">↳</span> Личный архив</div>
+    <div class="eyebrow">СОХРАНЁННЫЕ ЧАТЫ</div>
+    <nav id="chats" aria-label="Выбрать чат"></nav>
+    <div class="offline"><span class="dot"></span> Доступен без интернета<p>Сообщения и вложения с вашего диска.</p></div>
+  </aside>
+  <main>
+    <header><div class="eyebrow">АРХИВ TELEGRAM</div><h1 id="title">Архив чатов</h1><p id="summary"></p><p id="snapshot" class="subtle"></p></header>
+    <section class="toolbar" aria-label="Поиск и фильтры">
+      <label class="search">Поиск<input id="search" type="search" placeholder="Текст сообщения или расшифровки…" autocomplete="off"></label>
+      <label>Порядок<select id="order"><option value="new">Сначала новые</option><option value="old">Сначала старые</option></select></label>
+    </section>
+    <div id="filters" class="filters" aria-label="Тип сообщений"></div>
+    <div class="results"><span id="count" role="status"></span><span>Время указано по часовому поясу компьютера</span></div>
+    <section id="messages" aria-label="Сообщения"></section>
+    <button id="more" class="more" hidden>Показать ещё</button>
+    <footer>Просмотр локальной копии · Исходный архив хранится отдельно</footer>
+  </main>
+  <dialog id="lightbox"><button id="close-image" aria-label="Закрыть изображение">✕</button><img id="large-image" alt="Увеличенное изображение"><a id="image-download" download>Сохранить изображение</a></dialog>
+</body>
+</html>
