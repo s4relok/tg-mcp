@@ -1,0 +1,16 @@
+[Unit]
+Description=Update the single tg-mcp archive only when indexed content changes
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=s4relok
+Group=www-data
+WorkingDirectory=/srv/tg-mcp/current
+Environment=TG_MCP_ENV_FILE=/srv/tg-mcp/shared/.env
+EnvironmentFile=/srv/tg-mcp/shared/daily-backups.env
+ExecStart=/srv/tg-mcp/shared/node/bin/node ops/daily-backups.mjs $BACKUP_SOURCE_IDS
+TimeoutStartSec=4h
+TimeoutStopSec=120
+UMask=0077

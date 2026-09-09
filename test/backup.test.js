@@ -11,6 +11,7 @@ import { MemoryTelegramStore } from '../src/storage/memoryStore.js';
 import { loadConfig } from '../src/config.js';
 import { archiveMedia, downloadArchiveMedia, mediaKey } from '../src/backup/telegramBackup.js';
 import { createImageCache } from '../src/images/imageCache.js';
+import { runDailyBackup, indexFingerprint } from '../src/backup/dailyBackup.js';
 
 async function fixture(t, options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tg-backup-'));
@@ -87,6 +88,53 @@ test('manual backup drains pending media without enabling persistent capture, in
   assert.equal((await f.backup.status('123')).captureEnabled, false);
   await f.backup.captureIndexed([{ sourceId: '123', messageId: 999, text: 'must stay outside paused archive' }]);
   assert.equal((await f.backup.search({ sourceId: '123', query: 'must stay' })).messages.length, 0);
+});
+
+test('daily backup skips unchanged index and sync timestamps without opening Telegram or appending records', async (t) => {
+  const f = await fixture(t, { indexed: [{ sourceId: '123', messageId: 1, text: 'hello', updatedAt: new Date(0) }],
+    remote: [textMessage(1, 'hello')] });
+  await f.backup.enable('123'); await f.backup.pause('123');
+  assert.equal((await runDailyBackup({ backup: f.backup, store: f.store, sourceId: '123' })).status, 'updated');
+  const before = await f.backup.status('123');
+  const fingerprint = await indexFingerprint(f.store, '123');
+  f.store.messages[0].updatedAt = new Date();
+  assert.equal(await indexFingerprint(f.store, '123'), fingerprint);
+  f.offline();
+  assert.equal((await runDailyBackup({ backup: f.backup, store: f.store, sourceId: '123' })).status, 'unchanged');
+  assert.equal((await f.backup.status('123')).records, before.records);
+  await f.store.upsertMessages([{ sourceId: '123', messageId: 1, text: 'hello', transcriptText: 'new transcript' }]);
+  await assert.rejects(runDailyBackup({ backup: f.backup, store: f.store, sourceId: '123' }), /offline/);
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.backup.archive.sourceRoot('123'), 'daily-state.json'))).fingerprint, fingerprint);
+  assert.notEqual(await indexFingerprint(f.store, '123'), fingerprint);
+  assert.equal((await f.backup.status('123')).captureEnabled, false);
+});
+
+test('daily backup processes pending originals even when the index fingerprint is unchanged', async (t) => {
+  const f = await fixture(t, { remote: [voice(1)] });
+  await f.backup.enable('123'); await f.backup.pause('123');
+  await runDailyBackup({ backup: f.backup, store: f.store, sourceId: '123' });
+  const state = await f.backup.archive.view('123');
+  const media = [...state.latest.values()].find((r) => r.kind === 'media');
+  await f.backup.archive.append('123', [{ kind: 'media', key: media.key,
+    payload: { ...media.payload, status: 'failed', retryAt: new Date(0).toISOString() } }]);
+  const result = await runDailyBackup({ backup: f.backup, store: f.store, sourceId: '123' });
+  assert.equal(result.status, 'updated');
+  assert.equal(result.media.saved, 1);
+});
+
+test('expiring Telegram file references do not create message versions but edits do', async (t) => {
+  const f = await fixture(t);
+  const archive = f.backup.archive;
+  await f.backup.enable('123');
+  const payload = { messageId: 1, text: 'original', telegram: { media: { photo: { id: '55', fileReference: { data: [1, 2] } } } } };
+  await archive.append('123', [{ kind: 'message', key: '1', payload }]);
+  const before = (await archive.view('123')).seq;
+  payload.telegram.media.photo.fileReference.data = [3, 4];
+  await archive.append('123', [{ kind: 'message', key: '1', payload }]);
+  assert.equal((await archive.view('123')).seq, before);
+  payload.text = 'edited';
+  await archive.append('123', [{ kind: 'message', key: '1', payload }]);
+  assert.equal((await archive.view('123')).seq, before + 1);
 });
 
 test('backup is exact opt-in, protects purge even when paused, and leaves a second chat alone', async (t) => {

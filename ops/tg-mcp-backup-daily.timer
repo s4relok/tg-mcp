@@ -1,0 +1,10 @@
+[Unit]
+Description=Check selected Telegram backups daily at 03:30 Chisinau time
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Europe/Chisinau
+Persistent=true
+Unit=tg-mcp-backup-daily.service
+
+[Install]
+WantedBy=timers.target

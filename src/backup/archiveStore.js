@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { stableTelegramContent } from './contentIdentity.js';
 
 export function exactSourceId(value) {
   const id = String(value ?? '');
@@ -196,6 +197,8 @@ export class ArchiveStore {
         const previous = state.latest.get(`${kind}:${key}`);
         if (previous && ifAbsent) continue;
         if (previous && canonical(previous.payload) === canonical(payload)) continue;
+        if (previous && kind === 'message'
+          && canonical(stableTelegramContent(previous.payload)) === canonical(stableTelegramContent(JSON.parse(canonical(payload))))) continue;
         const record = {
           schemaVersion: 1, sourceId: String(sourceId), seq: state.seq + 1,
           previous: state.head, observedAt: new Date().toISOString(), kind, key: String(key), payload

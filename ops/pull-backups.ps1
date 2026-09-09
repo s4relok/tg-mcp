@@ -40,7 +40,7 @@ try {
   foreach ($sourceId in $SourceIds) {
     if ($sourceId -notmatch '^-?\d{1,24}$') { throw 'Each source must be one exact numeric ID' }
     if ($RefreshServer) {
-      & ssh @sshOptions $RemoteHost "cd /srv/tg-mcp/current && /srv/tg-mcp/shared/node/bin/node src/cli.js backup-source-once $sourceId --env-path /srv/tg-mcp/shared/.env"
+      & ssh @sshOptions $RemoteHost "cd /srv/tg-mcp/current && /srv/tg-mcp/shared/node/bin/node src/cli.js backup-source-if-changed $sourceId --env-path /srv/tg-mcp/shared/.env"
       Assert-Success 'Refreshing server archive once'
     }
     $prepared = & ssh @sshOptions $RemoteHost "$remotePrefix prepare $sourceId"

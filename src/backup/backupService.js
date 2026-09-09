@@ -8,6 +8,7 @@ import { createAuthorizedTelegramClient, telegramPeerId, normalizeTelegramReacti
 import { resolveTelegramSourceEntity } from '../audio/telegramAudio.js';
 import { createOpenAiAudioTranscriber } from '../audio/openAiTranscriber.js';
 import { mcpAudioExtension } from '../audio/telegramAudio.js';
+import { stableIndexedContent } from './contentIdentity.js';
 
 function integer(value, fallback, max) {
   const result = value ?? fallback;
@@ -55,8 +56,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
     const entries = [];
     for (const message of messages.filter((item) => String(item.sourceId) === selected.sourceId)) {
       checkId(message.sourceId);
-      const plain = JSON.parse(canonical(message));
-      for (const key of ['_id', 'updatedAt', 'createdAt']) delete plain[key];
+      const plain = stableIndexedContent(JSON.parse(canonical(message)));
       const oldIndex = state.latest.get(`indexed:${message.messageId}`)?.payload;
       const transcriptOrigin = message.transcriptMedia ? mediaKey(message.transcriptMedia)
         : oldIndex && message.transcriptText && message.transcriptText === oldIndex.transcriptText

@@ -20,6 +20,7 @@ import { createTelegramMessageSender } from './telegram/messageSender.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 import { attachBackup } from './backup/integration.js';
 import { createBackupService } from './backup/backupService.js';
+import { runDailyBackup } from './backup/dailyBackup.js';
 
 function usage() {
   console.log(`Usage:
@@ -46,6 +47,7 @@ function usage() {
   npm run cli -- backup-source SOURCE_ID [--pages N] [--env-path PATH]
   npm run cli -- run-source-backup SOURCE_ID [--pages N]
   npm run cli -- backup-source-once SOURCE_ID [--pages N]
+  npm run cli -- backup-source-if-changed SOURCE_ID
   npm run cli -- pause-source-backup SOURCE_ID
   npm run cli -- resume-source-backup SOURCE_ID
   npm run cli -- backup-status SOURCE_ID
@@ -321,6 +323,11 @@ async function main() {
 
   try {
     const backup = command === 'doctor' ? null : attachBackup({ config, store });
+    if (command === 'backup-source-if-changed') {
+      if (options.positional.length !== 1) throw new Error('backup-source-if-changed requires exactly one SOURCE_ID');
+      console.log(JSON.stringify(await runDailyBackup({ backup, store, sourceId: options.positional[0] }), null, 2));
+      return;
+    }
     if (command === 'backup-source-once') {
       if (options.positional.length !== 1) throw new Error('backup-source-once requires exactly one SOURCE_ID');
       console.log(JSON.stringify(await backup.runOnce(options.positional[0], { pages: options.pages }), null, 2));

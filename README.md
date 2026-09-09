@@ -642,6 +642,29 @@ directory on the same server is not protection against loss of that server.
 Object Lock / WORM policies must be configured at the external storage layer;
 the application does not claim administrator-proof immutability.
 
+### Daily server archive without duplicate copies
+
+`ops/daily-backups.mjs SOURCE_ID...` compares a stable fingerprint of each selected
+chat's indexed messages, transcripts, source metadata, supplemental data and media
+cache inventory. Sync timestamps and expiring Telegram file references do not
+count as changes. With no changes and no pending/retryable media, it returns
+`unchanged` without connecting to Telegram or appending archive records.
+Incomplete history and due media retries are processed even with the same index.
+The fingerprint is saved only after the updated archive passes verification.
+
+The job maintains the existing single archive at `BACKUP_DIR/<sourceId>`; it
+does not create dated server copies. The archive still retains previously saved
+messages and originals if they disappear from Telegram. Continuous capture
+should remain paused when using this daily mode. An unchanged operational index
+cannot reveal Telegram changes which the normal indexer has not observed yet.
+
+Install `ops/tg-mcp-backup-daily.service` and `.timer` into `/etc/systemd/system/`,
+and set `BACKUP_SOURCE_IDS` to the space-separated exact selected IDs in
+`/srv/tg-mcp/shared/daily-backups.env`. Enable the timer with
+`systemctl enable --now tg-mcp-backup-daily.timer`. It checks daily at 03:30
+Europe/Chisinau and catches up after downtime. Inspect results with
+`journalctl -u tg-mcp-backup-daily.service`. PC copies remain manual.
+
 ### Copy to this Windows computer
 
 After each successful Windows pull, an offline viewer is generated at
