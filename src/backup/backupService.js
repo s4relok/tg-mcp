@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { ArchiveStore, canonical, exactSourceId, hash, fileHash } from './archiveStore.js';
 import { exportSnapshot, restoreSnapshot } from './snapshots.js';
 import { archiveMedia, downloadArchiveMedia, mediaKey, normalizeArchiveMessage } from './telegramBackup.js';
-import { createAuthorizedTelegramClient, telegramPeerId } from '../telegram/telegramSync.js';
+import { createAuthorizedTelegramClient, telegramPeerId, normalizeTelegramReactions } from '../telegram/telegramSync.js';
 import { resolveTelegramSourceEntity } from '../audio/telegramAudio.js';
 import { createOpenAiAudioTranscriber } from '../audio/openAiTranscriber.js';
 import { mcpAudioExtension } from '../audio/telegramAudio.js';
@@ -25,6 +25,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
   createClient = createAuthorizedTelegramClient, downloadMedia = downloadArchiveMedia,
   createTranscriber = createOpenAiAudioTranscriber, logger = console }) {
   let running = null;
+  let stopping = false;
 
   function checkId(sourceId) {
     const id = exactSourceId(sourceId);
@@ -164,6 +165,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       && (!record.payload.retryAt || Date.parse(record.payload.retryAt) <= Date.now()))
       .sort((a, b) => b.payload.messageId - a.payload.messageId).slice(0, limit);
     for (const job of jobs) {
+      if (stopping) return;
       const current = await archive.view(sourceId);
       if (!current.latest.get('control:capture')?.payload.enabled) return;
       await activeSource(sourceId);
@@ -220,6 +222,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       }
       // Oldest-to-newest incremental pages never jump over a backlog.
       for (let page = 0; page < pages; page++) {
+        if (stopping) break;
         assertLease();
         if (!(await archive.view(id)).latest.get('control:capture')?.payload.enabled) break;
         await activeSource(id);
@@ -233,6 +236,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       await processMedia(id, client, entity, config.backupMediaBatchSize || 20);
       // An independent backward cursor imports or reconciles the whole history.
       for (let page = 0; page < pages; page++) {
+        if (stopping) break;
         assertLease();
         if (!(await archive.view(id)).latest.get('control:capture')?.payload.enabled) break;
         await activeSource(id);
@@ -264,6 +268,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
   }
 
   async function run(sourceId, options) {
+    if (stopping) return { status: 'stopping', sourceId: checkId(sourceId) };
     if (running) return { status: 'busy', sourceId: checkId(sourceId) };
     running = collect(sourceId, options);
     try { return await running; } finally { running = null; }
@@ -289,6 +294,8 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       media, mediaBytes: bytes, freeBytes: Number(space.bavail) * Number(space.bsize),
       cachedMediaCopies: values.filter((r) => r.kind === 'cached_media').length,
       knownMediaComplete: Object.entries(media).every(([key, count]) => key === 'saved' || count === 0),
+      mediaGaps: values.filter((r) => r.kind === 'media' && !['saved', 'pending'].includes(r.payload.status))
+        .slice(0, 20).map((r) => ({ messageId: r.payload.messageId, status: r.payload.status, error: r.payload.error || null })),
       collection: state.latest.get('health:collection')?.payload || null,
       replication: state.latest.get('health:replication')?.payload || { status: config.backupReplicaDir ? 'pending' : 'not_configured' },
       verification: state.latest.get('health:verification')?.payload || null,
@@ -306,6 +313,7 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
       if (message && (fingerprint === mediaKey(message.media) || !message.media)) Object.assign(message, r.payload);
     }
     for (const r of state.latest.values()) if (r.kind === 'deleted' && messages.has(r.key)) messages.get(r.key).deletedInTelegram = r.payload;
+    for (const r of state.latest.values()) if (r.kind === 'reactions' && messages.has(r.key)) Object.assign(messages.get(r.key), r.payload);
     return [...messages.values()].sort((a, b) => a.messageId - b.messageId);
   }
 
@@ -397,7 +405,11 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
   }
 
   async function handleUpdate(update) {
-    const peerId = telegramPeerId(update.message?.peerId) || (update.channelId ? String(update.channelId) : null);
+    let shortMessage;
+    if (['UpdateShortMessage', 'UpdateShortChatMessage'].includes(update.className)) {
+      shortMessage = { ...update, message: update.message, peerId: update.chatId ? { chatId: update.chatId } : { userId: update.userId } };
+    }
+    const peerId = telegramPeerId(shortMessage?.peerId || update.message?.peerId || update.peer) || (update.channelId ? String(update.channelId) : null);
     if (!peerId) return;
     const selected = await archive.selected(peerId);
     if (!selected) return;
@@ -407,7 +419,14 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
     const [source] = await store.listSources({ sourceIds: [id] });
     if (!source) return;
     const name = update.className || '';
-    if (['UpdateNewMessage', 'UpdateNewChannelMessage', 'UpdateEditMessage', 'UpdateEditChannelMessage'].includes(name)) {
+    if (shortMessage) {
+      await captureTelegram(id, source, [shortMessage]);
+    } else if (name === 'UpdateMessageReactions' && Number.isInteger(update.msgId)) {
+      const reactions = normalizeTelegramReactions(update.reactions);
+      await archive.append(id, [{ kind: 'reactions', key: String(update.msgId), payload: {
+        reactions, reactionCount: reactions.reduce((sum, reaction) => sum + reaction.count, 0)
+      } }]);
+    } else if (['UpdateNewMessage', 'UpdateNewChannelMessage', 'UpdateEditMessage', 'UpdateEditChannelMessage'].includes(name)) {
       if (telegramPeerId(update.message?.peerId) === id) await captureTelegram(id, source, [update.message]);
     } else if (name === 'UpdateDeleteChannelMessages' && String(update.channelId) === id) {
       await archive.append(id, (update.messages || []).map((messageId) => ({ kind: 'deleted', key: String(messageId), payload: { confirmed: true } })));
@@ -435,5 +454,5 @@ export function createBackupService({ config, store, archive = new ArchiveStore(
 
   return { archive, enable, pause, run, status, search, context, mediaFile, verify, replicate, transcribe,
     captureIndexed, saveDownloaded, handleUpdate, restore: restoreSnapshot, selected: () => archive.selections(),
-    wait: () => running || Promise.resolve(), logger };
+    requestStop: () => { stopping = true; }, wait: () => running || Promise.resolve(), logger };
 }

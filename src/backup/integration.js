@@ -88,5 +88,5 @@ export function startBackupWorker({ backup, config, logger = console, createClie
     timer.unref();
   }
   schedule(0);
-  return { async stop() { stopped = true; clearTimeout(timer); await task; if (listener) await listener.disconnect(); await backup.wait(); } };
+  return { async stop() { stopped = true; clearTimeout(timer); backup.requestStop(); await task; if (listener) await listener.disconnect(); await backup.wait(); } };
 }

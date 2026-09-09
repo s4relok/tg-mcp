@@ -21,9 +21,44 @@ function safeEntry(name, sourceId) {
     || new RegExp(`^${sourceId}/blobs/[a-f0-9]{64}$`).test(name);
 }
 
+export function validateManifest(manifest) {
+  const id = exactSourceId(manifest.sourceId);
+  if (manifest.schemaVersion !== 1 || !Number.isSafeInteger(manifest.records) || manifest.records < 0
+    || !Array.isArray(manifest.files)) throw new Error('Invalid snapshot manifest');
+  const seen = new Set();
+  for (const entry of manifest.files) {
+    if (!safeEntry(entry.path, id) || seen.has(entry.path) || !/^[a-f0-9]{64}$/.test(entry.sha256)
+      || !Number.isSafeInteger(entry.size) || entry.size < 0) throw new Error('Invalid snapshot file entry');
+    seen.add(entry.path);
+  }
+  if (!seen.has(`${id}/selection.json`)) throw new Error('Snapshot is missing its selection');
+  return manifest;
+}
+
+export async function snapshotManifest(archive, sourceId) {
+  const id = await archive.assertSelected(sourceId);
+  const snapshot = await archive.locked(async () => {
+    const state = await archive.view(id, { fresh: true });
+    const names = new Set([`${id}/selection.json`]);
+    for (const record of state.records) {
+      names.add(`${id}/records/${record.file}`);
+      if (['media', 'cached_media'].includes(record.kind) && record.payload.status === 'saved') names.add(`${id}/blobs/${record.payload.sha256}`);
+    }
+    return { head: state.head, records: state.seq, names: [...names].sort() };
+  });
+  const files = [];
+  for (const name of snapshot.names) {
+    const file = path.join(archive.root, name);
+    files.push({ path: name, size: (await fs.stat(file)).size, sha256: await fileHash(file) });
+  }
+  return validateManifest({ schemaVersion: 1, sourceId: id, createdAt: new Date().toISOString(),
+    head: snapshot.head, records: snapshot.records, files });
+}
+
 export async function verifySnapshot(directory, sourceId) {
   const id = exactSourceId(sourceId);
   const manifest = JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8'));
+  validateManifest(manifest);
   if (manifest.schemaVersion !== 1 || manifest.sourceId !== id || !Array.isArray(manifest.files)) throw new Error('Invalid snapshot manifest');
   const seen = new Set();
   for (const entry of manifest.files) {

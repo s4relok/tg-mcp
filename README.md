@@ -642,6 +642,31 @@ directory on the same server is not protection against loss of that server.
 Object Lock / WORM policies must be configured at the external storage layer;
 the application does not claim administrator-proof immutability.
 
+### Copy to this Windows computer
+
+The SSH pull workflow keeps permanent snapshots under `F:\Backups\tg-mcp` (NTFS).
+It transfers only missing SHA-256 objects, reuses local objects through hard links
+across snapshots, and verifies the entire journal/files before marking the copy
+successful. Each snapshot has the same self-contained layout accepted by restore.
+Do not edit files inside snapshots or `.objects`: they share immutable data.
+Server originals are never removed. Only a successful transfer's temporary tar
+and staging files are cleaned up. Interrupted `.downloads`/`.incoming`/`.partial`
+directories are not complete backups and are retained for inspection.
+
+```powershell
+.\ops\pull-backups.ps1 -SourceIds @('<sourceId1>', '<sourceId2>') -DestinationRoot 'F:\Backups\tg-mcp'
+.\ops\install-backup-task.ps1 -SourceIds @('<sourceId1>', '<sourceId2>') -DestinationRoot 'F:\Backups\tg-mcp'
+```
+
+The optional Windows task runs daily at 03:30 and at user logon, using the current
+user's existing SSH key, strict host-key checking and non-interactive mode. Missed
+runs start when available; the PC must be on and the user logged in. Concurrent
+pulls are excluded. Configuration is in `pull-config.json` and execution output
+in `pull.log` under the destination. Node.js, Windows `tar`, `ssh` and `scp` must
+be installed. A 512 MiB reserve and temporary transfer space are checked on the PC.
+The service status records the verified PC destination only after local checksum
+verification succeeds. Neither SSH keys nor Telegram sessions enter snapshots.
+
 Archive status includes free space, media failures and the last verified replica.
 Downloads and journal appends reserve at least `BACKUP_MIN_FREE_BYTES` (512 MiB by
 default); lack of space stops collection instead of deleting previous records.
