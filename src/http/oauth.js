@@ -42,12 +42,10 @@ function parseTokenScopes(payload) {
 export function getSupportedOAuthScopes(config) {
   const scopes = [OAuthScopes.read];
   if (config.mcpBackupToolsEnabled) scopes.push(OAuthScopes.backupRead, OAuthScopes.backupManage);
-  if (config.mcpSourceManagementEnabled) {
-    scopes.push(
-      OAuthScopes.sourcesRead,
-      OAuthScopes.sourcesManage
-    );
+  if (config.mcpSourceManagementEnabled || config.mcpProfileToolsEnabled) {
+    scopes.push(OAuthScopes.sourcesRead);
   }
+  if (config.mcpSourceManagementEnabled) scopes.push(OAuthScopes.sourcesManage);
   if (config.mcpSourceManagementEnabled || config.mcpManualTranscriptionEnabled) {
     scopes.push(OAuthScopes.syncRun);
   }

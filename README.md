@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/s4relok/tg-mcp/actions/workflows/ci.yml)
 
-Telegram digest MCP server that logs into a Telegram user account and works only with selected Telegram chats and channels. Read access is the default; source management is an explicit authenticated capability.
+Telegram digest MCP server that logs into a Telegram user account and synchronizes selected Telegram chats and channels. Optional owner tools read live user profiles and contact birthdays. Read access is the default; source management is an explicit authenticated capability.
 
 ## Current shape
 
@@ -33,6 +33,8 @@ Telegram digest MCP server that logs into a Telegram user account and works only
   - `list_source_images`
   - `get_telegram_images`
 - Optional authenticated owner MCP tools:
+  - `get_telegram_profile`
+  - `get_contact_birthdays`
   - `send_telegram_message`
   - `enable_source`
   - `disable_source`
@@ -113,7 +115,8 @@ Available scopes:
 - `telegram:read`: enabled-source lists, digests, search, summaries, status,
   original audio delivery when `MCP_AUDIO_TOOLS_ENABLED=true`, and owner image
   List/Get when `MCP_IMAGE_TOOLS_ENABLED=true`.
-- `telegram:sources:read`: disabled-source catalog and source settings.
+- `telegram:sources:read`: disabled-source catalog, source settings, and live user
+  profiles/contact birthdays when `MCP_PROFILE_TOOLS_ENABLED=true`.
 - `telegram:sources:manage`: enable/disable, tags, and settings mutations.
 - `telegram:sync:run`: exact bounded manual sync and manual audio
   transcription.
@@ -135,6 +138,43 @@ delivery are controlled independently by `MCP_MANUAL_TRANSCRIPTION_ENABLED`,
 `APP_AUTH_TOKEN` for admin, REST, CLI setup, and the legacy `/mcp` endpoint;
 OAuth protects only `OAUTH_MCP_PATH`. See the implementation and IdP rollout checklist in
 [docs/oauth-scopes-plan.md](docs/oauth-scopes-plan.md).
+
+## User profiles and contact birthdays
+
+Set `MCP_PROFILE_TOOLS_ENABLED=true` to expose two read-only tools on the
+authenticated owner MCP and OAuth endpoints:
+
+- `get_telegram_profile({ userId: "@username" })` reads one live Telegram user
+  profile: names, username, bio, contact/bot/deleted status, Premium/verified
+  status, common chat count, and visible birthday. `userId` also accepts `"me"`
+  or a positive numeric user ID supplied as a string. For numeric IDs, the
+  server first resolves contacts/cached entities, then checks at most 500 recent
+  dialogs. Use an exact username if the ID cannot be resolved. Phone numbers,
+  names, links, groups, and channels are not accepted as profile selectors.
+- `get_contact_birthdays({})` returns Telegram's list of visible birthdays for
+  yesterday, today, and tomorrow. Telegram determines the date window; the tool
+  does not accept a date range or return a complete birthday calendar.
+
+Both tools return `fetchedAt`. Birthdays have `day`, `month`, and nullable `year`;
+an omitted birth year is never inferred. A profile with no visible birthday
+returns `birthday: null` and `birthdayStatus: "not_set_or_not_visible"`, because
+Telegram does not distinguish those reasons in the response.
+
+The tools use the existing user session and Telegram privacy rules. They read
+account-visible profiles/contact metadata independently of selected message
+sources and do not enable chats, sync messages, or persist profiles in MongoDB.
+OAuth requires both `telegram:read` and `telegram:sources:read` on every call.
+The feature defaults off and is never exposed on unauthenticated endpoints.
+
+After deployment, verify both tools using the existing owner token without
+printing profile data or credentials:
+
+```bash
+ENV_FILE=/srv/tg-mcp/shared/.env node ops/smoke-profiles.mjs
+```
+
+The smoke check reads the owner's profile, the nearby birthday list, and, when
+the list is non-empty, one returned contact profile by numeric ID.
 
 ## Telegram setup
 

@@ -277,6 +277,7 @@ export function createTelegramMcpServer({
   audioService,
   imageService,
   messageSender,
+  profileService,
   syncCoordinator,
   backupService,
   access = {}
@@ -655,6 +656,41 @@ export function createTelegramMcpServer({
       run: async () => toolResult(await digestService.getActionItems(args))
     })
   );
+
+  if (access.readProfiles && profileService) {
+    const profileScopes = [OAuthScopes.read, OAuthScopes.sourcesRead];
+    server.registerTool(
+      'get_telegram_profile',
+      {
+        title: 'Get Telegram user profile',
+        description: 'Read one live user profile, including bio and birthday visible to the authenticated owner. A missing birthday means not set or not visible; the birth year may be absent. Does not require chat synchronization.',
+        inputSchema: {
+          userId: z.string().trim().min(1).max(64)
+            .describe('Exact positive Telegram user ID from contacts or recent dialogs, @username, or me. Names, phone numbers, groups and channels are not supported.')
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true },
+        ...oauthToolMetadata(access, profileScopes)
+      },
+      async (args, extra) => runAuthorizedTool({
+        access, config, extra, scopes: profileScopes,
+        run: async () => toolResult(await profileService.getProfile(args))
+      })
+    );
+    server.registerTool(
+      'get_contact_birthdays',
+      {
+        title: 'Get Telegram contact birthdays',
+        description: 'Read visible contact birthdays for yesterday, today and tomorrow from Telegram, relative to its current day. This is not a full calendar or an arbitrary date-range search. Birth years may be absent. Does not require chat synchronization.',
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: true },
+        ...oauthToolMetadata(access, profileScopes)
+      },
+      async (_args, extra) => runAuthorizedTool({
+        access, config, extra, scopes: profileScopes,
+        run: async () => toolResult(await profileService.getContactBirthdays())
+      })
+    );
+  }
 
   if (access.sendMessages && messageSender) {
     const sendScopes = [OAuthScopes.read, OAuthScopes.messagesSend];

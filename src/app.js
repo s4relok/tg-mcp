@@ -27,6 +27,7 @@ import {
 } from './services/sourceManagement.js';
 import { selectSource } from './services/sourceAdmin.js';
 import { createTelegramMessageSender } from './telegram/messageSender.js';
+import { createTelegramProfileService } from './telegram/profileService.js';
 import { createTelegramSyncCoordinator } from './telegram/sourceSyncCoordinator.js';
 import { createAuthorizedTelegramClient, refreshTelegramSources, syncTelegramMessages } from './telegram/telegramSync.js';
 
@@ -98,6 +99,7 @@ export function createApp({
   audioService,
   imageService,
   messageSender,
+  profileService,
   syncCoordinator,
   backupService,
   oauthTokenVerifier,
@@ -147,6 +149,11 @@ export function createApp({
     store
   });
   const sendTelegramMessage = messageSender || createTelegramMessageSender({ config });
+  const telegramProfiles = profileService || createTelegramProfileService({
+    config,
+    createClient: createTelegramClient,
+    now
+  });
   const manageSources = sourceManagementService || createSourceManagementService({ store, config, now });
   const sourceSync = syncCoordinator || createTelegramSyncCoordinator({
     config,
@@ -453,6 +460,7 @@ export function createApp({
             audioService: telegramAudio,
             imageService: telegramImages,
             messageSender: sendTelegramMessage,
+            profileService: telegramProfiles,
             syncCoordinator: sourceSync,
             backupService,
             access
@@ -521,6 +529,7 @@ export function createApp({
     allowDisabledSources: hasOwnerToken,
     manageSources: hasOwnerToken && config.mcpSourceManagementEnabled,
     sendMessages: hasOwnerToken && config.mcpMessageSendingEnabled,
+    readProfiles: hasOwnerToken && config.mcpProfileToolsEnabled,
     runSourceSync: hasOwnerToken && config.mcpSourceManagementEnabled,
     runManualTranscription: hasOwnerToken && config.mcpManualTranscriptionEnabled,
     readAudio: hasOwnerToken && config.mcpAudioToolsEnabled,
@@ -533,6 +542,7 @@ export function createApp({
       allowDisabledSources: false,
       manageSources: false,
       sendMessages: false,
+      readProfiles: false,
       runSourceSync: false,
       runManualTranscription: false,
       readAudio: false,
@@ -546,6 +556,7 @@ export function createApp({
       allowDisabledSources: config.mcpSourceManagementEnabled,
       manageSources: config.mcpSourceManagementEnabled,
       sendMessages: config.mcpMessageSendingEnabled,
+      readProfiles: config.mcpProfileToolsEnabled,
       runSourceSync: config.mcpSourceManagementEnabled,
       runManualTranscription: config.mcpManualTranscriptionEnabled,
       readAudio: config.mcpAudioToolsEnabled,

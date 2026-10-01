@@ -152,6 +152,7 @@ export function loadConfig(env = process.env) {
     sourceMutationBatchLimit: readNumber(env, 'SOURCE_MUTATION_BATCH_LIMIT', 25),
     mcpSourceManagementEnabled: readBoolean(env, 'MCP_SOURCE_MANAGEMENT_ENABLED', false),
     mcpMessageSendingEnabled: readBoolean(env, 'MCP_MESSAGE_SENDING_ENABLED', false),
+    mcpProfileToolsEnabled: readBoolean(env, 'MCP_PROFILE_TOOLS_ENABLED', false),
     mcpManualTranscriptionEnabled: readBoolean(env, 'MCP_MANUAL_TRANSCRIPTION_ENABLED', false),
     mcpManualTranscriptionMaxLimit: readBoundedNumber(
       env,
